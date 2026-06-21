@@ -7,13 +7,17 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
-`fastly-sync` reads an OpenAPI (`openapi.json`) document — from a local file or
-a remote `http(s)` URL — and synchronises the derived **CDN** and **rate
-limiter** configuration onto a [Fastly](https://www.fastly.com/) service, on
-demand. Each path becomes a CDN cache setting whose policy is derived from its
-methods (GET/HEAD-only paths are cached, paths with mutating methods pass) and
-can be tuned with an `x-fastly-cache` extension; paths carrying an
-`x-fastly-ratelimit` extension become Fastly rate limiters.
+`fastly-sync` synchronises [Fastly](https://www.fastly.com/) configuration on
+demand from declarative sources:
+
+- **CDN cache** and **rate limiters** are derived from an OpenAPI
+  (`openapi.json`) document (local file or remote `http(s)` URL). Each path
+  becomes a CDN cache setting whose policy is derived from its methods
+  (GET/HEAD-only paths are cached, paths with mutating methods pass) and can be
+  tuned with an `x-fastly-cache` extension; paths carrying an
+  `x-fastly-ratelimit` extension become Fastly rate limiters.
+- **WAF IP blacklisting** is driven by a text blocklist (local or remote),
+  reconciled onto a Fastly Edge ACL.
 
 ## Documentation
 

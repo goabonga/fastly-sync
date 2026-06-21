@@ -6,7 +6,7 @@
 
 [project]
 site_name = "fastly-sync"
-site_description = "Synchronise Fastly CDN and rate limiter configuration from an OpenAPI spec."
+site_description = "Synchronise Fastly CDN, rate limiter and WAF IP blocklist configuration on demand."
 site_author = "Chris"
 site_url = "https://goabonga.github.io/fastly-sync/"
 repo_url = "https://github.com/goabonga/fastly-sync"

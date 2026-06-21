@@ -29,16 +29,17 @@ plan before any public disclosure.
 
 ## Scope
 
-`fastly-sync` reads an OpenAPI document (local or remote) and pushes the
-derived CDN and rate limiter configuration to the Fastly API. The parts most
-relevant to security are:
+`fastly-sync` reads declarative sources (an OpenAPI document and/or an IP
+blocklist, local or remote) and pushes the derived CDN, rate limiter and WAF
+Edge ACL configuration to the Fastly API. The parts most relevant to security
+are:
 
 - handling of the **Fastly API token** (`FASTLY_API_TOKEN`) — never logged,
   never written to disk;
-- fetching **remote OpenAPI documents** over `http(s)` (untrusted input
-  parsed as JSON);
-- the **changes pushed to a live Fastly service** — review `--dry-run`
-  output before applying.
+- fetching **remote OpenAPI documents and IP blocklists** over `http(s)`
+  (untrusted input parsed as JSON / validated as IP/CIDR);
+- the **changes pushed to a live Fastly service** (including the WAF IP
+  blocklist) — review `--dry-run` output before applying.
 
 Vulnerabilities in third-party dependencies should be reported upstream, but
 please let us know so the pinned ranges can be bumped.

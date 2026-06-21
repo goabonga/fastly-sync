@@ -4,13 +4,13 @@
 [project]
 name = "fastly-sync"
 version = "0.0.0"
-description = "Synchronise Fastly CDN and rate limiter configuration from an OpenAPI spec."
+description = "Synchronise Fastly CDN, rate limiter and WAF IP blocklist configuration on demand."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Chris", email = "goabonga@pm.me" }]
-keywords = ["fastly", "cdn", "rate-limiter", "openapi", "sync"]
+keywords = ["fastly", "cdn", "rate-limiter", "waf", "acl", "openapi", "sync"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

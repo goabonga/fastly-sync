@@ -1,8 +1,8 @@
 # fastly-sync
 
-`fastly-sync` reads an OpenAPI (`openapi.json`) document — local or remote —
-and synchronises the derived CDN and rate limiter configuration onto a Fastly
-service, on demand.
+`fastly-sync` synchronises Fastly configuration on demand: it reads an OpenAPI
+(`openapi.json`) document (local or remote) to drive the CDN cache and rate
+limiters, and a text blocklist to drive WAF IP blacklisting (an Edge ACL).
 
 ## Install
 

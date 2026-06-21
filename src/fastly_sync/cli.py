@@ -24,8 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fastly-sync",
         description=(
-            "Synchronise Fastly CDN and rate limiter configuration from a "
-            "local or remote OpenAPI (openapi.json) document."
+            "Synchronise Fastly configuration on demand: CDN cache and rate "
+            "limiters from a local or remote OpenAPI (openapi.json) document, "
+            "and the WAF IP blocklist (Edge ACL) from a text file."
         ),
     )
     parser.add_argument(
