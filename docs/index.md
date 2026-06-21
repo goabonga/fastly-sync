@@ -16,8 +16,12 @@ pip install fastly-sync
 export FASTLY_API_TOKEN=...
 export FASTLY_SERVICE_ID=...
 
-fastly-sync sync --openapi ./openapi.json --dry-run
-fastly-sync sync --openapi https://api.example.com/openapi.json
+fastly-sync sync --openapi ./openapi.json --dry-run        # print the plan
+fastly-sync sync --openapi https://api.example.com/openapi.json  # plan + confirm
+fastly-sync sync --openapi ./openapi.json --no-confirm     # apply without prompt
+
+# Show the live config applied on Fastly (CDN, rate limiters, WAF IPs):
+fastly-sync show
 
 # WAF IP blacklisting from a text blocklist (one IP/CIDR per line):
 fastly-sync waf sync --blocklist ./blocklist.txt --bootstrap
@@ -26,6 +30,10 @@ fastly-sync waf sync --blocklist ./blocklist.txt --dry-run
 # Export the live ACL back to the blocklist format:
 fastly-sync waf export --output blocklist.txt
 ```
+
+`sync` is declarative: by default it also prunes managed objects no longer in
+the spec (`--no-prune` to keep additive). It prints a plan and asks for
+confirmation before applying (`--no-confirm` to skip).
 
 Each path in the spec becomes a CDN cache setting: GET/HEAD-only paths are
 cached, paths with mutating methods pass, and the policy can be tuned per path

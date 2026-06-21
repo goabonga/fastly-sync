@@ -42,16 +42,20 @@ pip install fastly-sync      # or: uvx fastly-sync --help
 export FASTLY_API_TOKEN=...        # or pass --token
 export FASTLY_SERVICE_ID=...       # or pass --service-id
 
-# Preview the changes without touching the live service:
+# Preview the plan without touching the live service:
 fastly-sync sync --openapi ./openapi.json --dry-run
 
-# Apply: clones the active version, configures cache settings and rate
-# limiters, then activates the new version.
+# Apply: prints the plan, asks for confirmation, then clones the active
+# version, reconciles cache settings + rate limiters, and activates it.
 fastly-sync sync --openapi https://api.example.com/openapi.json
+fastly-sync sync --openapi ./openapi.json --no-confirm   # skip the prompt (CI)
 
 # Apply a single component (one clone/activate either way):
 fastly-sync sync --openapi ./openapi.json --only cdn
 fastly-sync sync --openapi ./openapi.json --skip ratelimit
+
+# Show the live config applied on Fastly (CDN, rate limiters, WAF IPs):
+fastly-sync show
 
 # WAF IP blacklisting: reconcile an Edge ACL from a text blocklist.
 fastly-sync waf sync --blocklist ./blocklist.txt --bootstrap   # one-time ACL + VCL
@@ -145,6 +149,24 @@ A path opts into a rate limiter with the `x-fastly-ratelimit` extension:
 
 `limit` is required (requests per `window`); `window` defaults to 60 seconds
 and `name` defaults to a slug of the path.
+
+### Reconciliation, pruning and confirmation
+
+`sync` is **declarative**: the OpenAPI document is the source of truth. On each
+run it not only creates/updates the managed objects but also **prunes** the
+ones it previously created that are no longer in the spec (a removed path's
+cache setting / condition / serve-stale header, a removed rate limiter). Pass
+`--no-prune` to keep additive behaviour.
+
+Pruning is **scoped to objects fastly-sync owns** — managed rate limiters are
+named with an `fsync-` prefix and cache settings are matched through their
+`cache-…` condition — so configuration created by hand is never deleted. A
+scoped run (`--only` / `--skip`) only ever touches the component it targets.
+
+Before applying, `sync` (and `waf sync`) prints a **plan** and asks for
+confirmation. Use `--dry-run` to print the plan and stop, or `--no-confirm` to
+apply without prompting (CI). `show` prints the live CDN, rate limiter and WAF
+configuration currently applied on Fastly.
 
 ## Getting started (development)
 
