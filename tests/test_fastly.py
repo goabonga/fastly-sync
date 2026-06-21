@@ -69,7 +69,7 @@ def test_mutating_calls_issue_requests():
     methods_paths = {(method, path) for method, path, _ in seen}
     assert ("PUT", "/service/svc/version/7/condition/cache-w") in methods_paths
     assert ("PUT", "/service/svc/version/7/cache_settings//w") in methods_paths
-    assert ("PUT", "/service/svc/version/7/rate-limiters/w") in methods_paths
+    assert ("PUT", "/service/svc/version/7/rate-limiters/fsync-w") in methods_paths
     assert ("PUT", "/service/svc/version/7/activate") in methods_paths
     cache_body = next(
         body for _, path, body in seen if path.endswith("/cache_settings//w")
@@ -185,6 +185,32 @@ def test_update_acl_entries_noop_when_empty():
     client, _ = make_client(handler)
     client.update_acl_entries("ACL9", [], [])
     assert calls == []
+
+
+def test_list_and_delete_versioned_objects():
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, request.url.path))
+        if request.method == "GET":
+            return httpx.Response(200, json=[{"name": "x"}])
+        return httpx.Response(200, json={})
+
+    client, _ = make_client(handler)
+    assert client.list_conditions(3) == [{"name": "x"}]
+    assert client.list_cache_settings(3) == [{"name": "x"}]
+    assert client.list_headers(3) == [{"name": "x"}]
+    assert client.list_rate_limiters(3) == [{"name": "x"}]
+    client.delete_condition(3, "cache-old")
+    client.delete_cache_setting(3, "/old")
+    client.delete_header(3, "serve-stale-cache-old")
+    client.delete_rate_limiter("r1")
+
+    assert ("GET", "/service/svc/version/3/condition") in seen
+    assert ("DELETE", "/service/svc/version/3/condition/cache-old") in seen
+    assert ("DELETE", "/service/svc/version/3/cache_settings//old") in seen
+    assert ("DELETE", "/service/svc/version/3/header/serve-stale-cache-old") in seen
+    assert ("DELETE", "/service/svc/rate-limiters/r1") in seen
 
 
 def test_request_wraps_http_errors():

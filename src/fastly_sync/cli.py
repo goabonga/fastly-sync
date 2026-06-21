@@ -16,7 +16,7 @@ from .config import load_settings
 from .errors import FastlySyncError
 from .fastly import FastlyClient
 from .spec import build_desired_state, load_spec
-from .sync import Component, select_state, synchronize
+from .sync import Component, resolve_components, select_state, synchronize
 from .waf import (
     DEFAULT_ACL_NAME,
     bootstrap_acl,
@@ -89,6 +89,11 @@ def sync(
     skip: Component | None = typer.Option(
         None, "--skip", help="apply everything except this component"
     ),
+    prune: bool = typer.Option(
+        True,
+        "--prune/--no-prune",
+        help="delete managed objects no longer in the spec (default: on)",
+    ),
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
@@ -99,15 +104,24 @@ def sync(
 
     def run() -> None:
         settings = load_settings(token, service_id)
+        components = resolve_components(only, skip)
         state = select_state(
             build_desired_state(load_spec(openapi)), only=only, skip=skip
         )
         with FastlyClient(settings.token, settings.service_id) as client:
-            result = synchronize(state, client, dry_run=dry_run)
+            result = synchronize(
+                state, client, components=components, prune=prune, dry_run=dry_run
+            )
         verb = "would apply" if result.dry_run else "applied"
-        typer.echo(f"fastly-sync: {verb} {len(result.applied)} change(s)")
+        pruned = "would prune" if result.dry_run else "pruned"
+        typer.echo(
+            f"fastly-sync: {verb} {len(result.applied)} change(s), "
+            f"{pruned} {len(result.removed)} orphan(s)"
+        )
         for action in result.applied:
             typer.echo(f"  [{action.kind}] {action.name} ({action.detail})")
+        for action in result.removed:
+            typer.echo(f"  - [{action.kind}] {action.name} ({action.detail})")
 
     _guard(run)
 

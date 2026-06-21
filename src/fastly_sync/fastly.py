@@ -16,6 +16,14 @@ from .models import BlockEntry, CdnEndpoint, RateLimiterRule
 BASE_URL = "https://api.fastly.com"
 _ACL_PAGE_SIZE = 100
 
+# Ownership marker so prune only ever deletes rate limiters created by us.
+RATELIMIT_NAME_PREFIX = "fsync-"
+
+
+def managed_rate_limiter_name(name: str) -> str:
+    """Return the Fastly object name fastly-sync uses for a rate limiter."""
+    return f"{RATELIMIT_NAME_PREFIX}{name}"
+
 
 class FastlyClient:
     """Minimal Fastly API client scoped to a single service.
@@ -114,12 +122,13 @@ class FastlyClient:
         )
 
     def upsert_rate_limiter(self, version: int, rule: RateLimiterRule) -> None:
-        """Create or update a rate limiter rule."""
+        """Create or update a rate limiter rule (named with our owner prefix)."""
+        name = managed_rate_limiter_name(rule.name)
         self._request(
             "PUT",
-            f"/service/{self._service_id}/version/{version}/rate-limiters/{rule.name}",
+            f"/service/{self._service_id}/version/{version}/rate-limiters/{name}",
             data={
-                "name": rule.name,
+                "name": name,
                 "rps_limit": rule.limit,
                 "window_size": rule.window,
             },
@@ -158,6 +167,58 @@ class FastlyClient:
     def activate_version(self, version: int) -> None:
         """Activate a service version, making its configuration live."""
         self._request("PUT", f"/service/{self._service_id}/version/{version}/activate")
+
+    # --- Listing & deletion (used to prune orphaned objects) ------------
+
+    def _list(self, version: int, resource: str) -> list[dict[str, Any]]:
+        response = self._request(
+            "GET", f"/service/{self._service_id}/version/{version}/{resource}"
+        )
+        result: list[dict[str, Any]] = response.json()
+        return result
+
+    def list_cache_settings(self, version: int) -> list[dict[str, Any]]:
+        """List the cache settings of a version."""
+        return self._list(version, "cache_settings")
+
+    def delete_cache_setting(self, version: int, name: str) -> None:
+        """Delete a cache setting by name."""
+        self._request(
+            "DELETE",
+            f"/service/{self._service_id}/version/{version}/cache_settings/{name}",
+        )
+
+    def list_conditions(self, version: int) -> list[dict[str, Any]]:
+        """List the conditions of a version."""
+        return self._list(version, "condition")
+
+    def delete_condition(self, version: int, name: str) -> None:
+        """Delete a condition by name."""
+        self._request(
+            "DELETE",
+            f"/service/{self._service_id}/version/{version}/condition/{name}",
+        )
+
+    def list_headers(self, version: int) -> list[dict[str, Any]]:
+        """List the header objects of a version."""
+        return self._list(version, "header")
+
+    def delete_header(self, version: int, name: str) -> None:
+        """Delete a header object by name."""
+        self._request(
+            "DELETE",
+            f"/service/{self._service_id}/version/{version}/header/{name}",
+        )
+
+    def list_rate_limiters(self, version: int) -> list[dict[str, Any]]:
+        """List the rate limiters of a version."""
+        return self._list(version, "rate-limiters")
+
+    def delete_rate_limiter(self, rate_limiter_id: str) -> None:
+        """Delete a rate limiter by id (rate limiters are deleted by id)."""
+        self._request(
+            "DELETE", f"/service/{self._service_id}/rate-limiters/{rate_limiter_id}"
+        )
 
     # --- WAF / Edge ACL -------------------------------------------------
 

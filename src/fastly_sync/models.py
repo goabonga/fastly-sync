@@ -81,3 +81,4 @@ class SyncResult:
 
     dry_run: bool = False
     applied: list[SyncAction] = field(default_factory=list)
+    removed: list[SyncAction] = field(default_factory=list)

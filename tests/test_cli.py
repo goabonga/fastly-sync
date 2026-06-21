@@ -44,10 +44,14 @@ def _factory(handler):
 
 
 def _sync_handler(request):
-    if request.url.path.endswith("/clone"):
+    path = request.url.path
+    if path.endswith("/clone"):
         return httpx.Response(200, json={"number": 2})
-    if request.method == "GET":
+    if path.endswith("/version") and request.method == "GET":
         return httpx.Response(200, json=[{"number": 1, "active": True}])
+    if request.method == "GET":
+        # list_conditions / cache_settings / header / rate-limiters -> nothing to prune
+        return httpx.Response(200, json=[])
     return httpx.Response(200, json={})
 
 
@@ -162,6 +166,57 @@ def test_sync_skip_cdn(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "[cdn]" not in result.output
     assert "[ratelimiter] widgets" in result.output
+
+
+def _sync_prune_handler(request):
+    path = request.url.path
+    if path.endswith("/clone"):
+        return httpx.Response(200, json={"number": 2})
+    if path.endswith("/version") and request.method == "GET":
+        return httpx.Response(200, json=[{"number": 1, "active": True}])
+    if path.endswith("/condition") and request.method == "GET":
+        return httpx.Response(200, json=[{"name": "cache-old"}])
+    if request.method == "GET":
+        return httpx.Response(200, json=[])
+    return httpx.Response(200, json={})
+
+
+def test_sync_prunes_orphans(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_sync_prune_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "pruned 1 orphan(s)" in result.output
+    assert "- [cdn-condition] cache-old" in result.output
+
+
+def test_sync_no_prune(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_sync_prune_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+            "--no-prune",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "pruned 0 orphan(s)" in result.output
 
 
 def test_sync_only_and_skip_conflict(tmp_path):
