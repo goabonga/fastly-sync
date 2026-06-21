@@ -16,14 +16,14 @@ pip install fastly-sync
 export FASTLY_API_TOKEN=...
 export FASTLY_SERVICE_ID=...
 
-# CDN + rate limiters from an OpenAPI spec (one clone/activate):
-fastly-sync sync all --openapi https://api.example.com/openapi.json
-fastly-sync sync all --openapi ./openapi.json --dry-run      # plan only
-fastly-sync sync all --openapi ./openapi.json --no-confirm   # apply unprompted
+# Everything: CDN cache + rate limiters AND the WAF blocklist:
+fastly-sync sync all --openapi ./openapi.json --blocklist ./blocklist.txt
+fastly-sync sync all --openapi ./openapi.json --blocklist ./blocklist.txt --dry-run
 
 # A single target:
 fastly-sync sync cdn          --openapi ./openapi.json
 fastly-sync sync rate-limiter --openapi ./openapi.json
+fastly-sync sync waf          --blocklist ./blocklist.txt
 
 # WAF IP blacklisting from a text blocklist (one IP/CIDR per line):
 fastly-sync sync waf --blocklist ./blocklist.txt --bootstrap

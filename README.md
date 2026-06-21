@@ -42,16 +42,16 @@ pip install fastly-sync      # or: uvx fastly-sync --help
 export FASTLY_API_TOKEN=...        # or pass --token
 export FASTLY_SERVICE_ID=...       # or pass --service-id
 
-# Apply both CDN and rate limiters from an OpenAPI spec, in one clone/activate.
-# Prints a plan, asks for confirmation, then clones the active version,
-# reconciles, and activates it.
-fastly-sync sync all --openapi https://api.example.com/openapi.json
-fastly-sync sync all --openapi ./openapi.json --dry-run      # plan only
-fastly-sync sync all --openapi ./openapi.json --no-confirm   # skip the prompt (CI)
+# Apply EVERYTHING: CDN cache + rate limiters (one clone/activate) AND the WAF
+# blocklist. Prints a plan, asks for confirmation, then applies.
+fastly-sync sync all --openapi ./openapi.json --blocklist ./blocklist.txt
+fastly-sync sync all --openapi ./openapi.json --blocklist ./blocklist.txt --dry-run
+fastly-sync sync all --openapi ./openapi.json --blocklist ./blocklist.txt --no-confirm
 
-# Apply a single target (each its own clone/activate):
+# Apply a single target:
 fastly-sync sync cdn          --openapi ./openapi.json
 fastly-sync sync rate-limiter --openapi ./openapi.json
+fastly-sync sync waf          --blocklist ./blocklist.txt
 
 # WAF IP blacklisting: reconcile an Edge ACL from a text blocklist.
 fastly-sync sync waf --blocklist ./blocklist.txt --bootstrap   # one-time ACL + VCL
