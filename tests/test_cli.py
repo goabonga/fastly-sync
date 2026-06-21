@@ -410,6 +410,55 @@ def test_waf_sync_bootstrap_and_apply(tmp_path, monkeypatch):
     assert "applied blocklist 'waf_blocklist': +2 / -1" in result.output
 
 
+def _show_handler(request):
+    path = request.url.path
+    if path.endswith("/version") and request.method == "GET":
+        return httpx.Response(200, json=[{"number": 3, "active": True}])
+    if path.endswith("/cache_settings"):
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "name": "/widgets",
+                    "action": "cache",
+                    "ttl": 60,
+                    "cache_condition": "cache-widgets",
+                }
+            ],
+        )
+    if path.endswith("/rate-limiters"):
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "r1",
+                    "name": "fsync-widgets",
+                    "rps_limit": 100,
+                    "window_size": 60,
+                }
+            ],
+        )
+    if path.endswith("/acl"):
+        return httpx.Response(200, json=[{"name": "waf_blocklist", "id": "ACL1"}])
+    if "/acl/ACL1/entries" in path:
+        return httpx.Response(
+            200,
+            json=[{"id": "e1", "ip": "198.51.100.7", "subnet": None, "comment": "bad"}],
+        )
+    return httpx.Response(200, json=[])
+
+
+def test_show(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(cli.app, ["show", "--token", "t", "--service-id", "s"])
+    assert result.exit_code == 0
+    assert "active version 3" in result.output
+    assert "/widgets  action=cache ttl=60" in result.output
+    assert "fsync-widgets  100 req / 60s" in result.output
+    assert "WAF blocklist 'waf_blocklist' (1)" in result.output
+    assert "198.51.100.7  # bad" in result.output
+
+
 def test_waf_export_to_stdout(monkeypatch):
     monkeypatch.setattr(cli, "FastlyClient", _factory(_waf_handler))
     result = runner.invoke(

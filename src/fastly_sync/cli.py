@@ -16,6 +16,7 @@ from .config import load_settings
 from .errors import FastlySyncError
 from .fastly import FastlyClient
 from .models import SyncResult
+from .show import gather
 from .spec import build_desired_state, load_spec
 from .sync import Component, resolve_components, select_state, synchronize
 from .waf import (
@@ -148,6 +149,43 @@ def sync(
                 f"fastly-sync: applied {len(result.applied)} change(s), "
                 f"pruned {len(result.removed)} orphan(s)"
             )
+
+    _guard(run)
+
+
+@app.command()
+def show(
+    acl_name: str = typer.Option(
+        DEFAULT_ACL_NAME, "--acl-name", help="name of the WAF Edge ACL"
+    ),
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+) -> None:
+    """Show the live CDN, rate limiter and WAF config applied on Fastly."""
+
+    def run() -> None:
+        settings = load_settings(token, service_id)
+        with FastlyClient(settings.token, settings.service_id) as client:
+            config = gather(client, acl_name)
+
+        typer.echo(f"fastly-sync: active version {config.version}")
+        typer.echo(f"CDN cache settings ({len(config.cache_settings)}):")
+        for setting in config.cache_settings:
+            typer.echo(
+                f"  {setting.get('name')}  "
+                f"action={setting.get('action')} ttl={setting.get('ttl')}"
+            )
+        typer.echo(f"Rate limiters ({len(config.rate_limiters)}):")
+        for limiter in config.rate_limiters:
+            typer.echo(
+                f"  {limiter.get('name')}  "
+                f"{limiter.get('rps_limit')} req / {limiter.get('window_size')}s"
+            )
+        typer.echo(f"WAF blocklist '{acl_name}' ({len(config.blocklist)}):")
+        for entry in config.blocklist:
+            cidr = entry.ip if entry.subnet is None else f"{entry.ip}/{entry.subnet}"
+            suffix = f"  # {entry.comment}" if entry.comment else ""
+            typer.echo(f"  {cidr}{suffix}")
 
     _guard(run)
 
