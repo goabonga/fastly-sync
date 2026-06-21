@@ -42,29 +42,28 @@ pip install fastly-sync      # or: uvx fastly-sync --help
 export FASTLY_API_TOKEN=...        # or pass --token
 export FASTLY_SERVICE_ID=...       # or pass --service-id
 
-# Preview the plan without touching the live service:
-fastly-sync sync --openapi ./openapi.json --dry-run
+# Apply both CDN and rate limiters from an OpenAPI spec, in one clone/activate.
+# Prints a plan, asks for confirmation, then clones the active version,
+# reconciles, and activates it.
+fastly-sync sync all --openapi https://api.example.com/openapi.json
+fastly-sync sync all --openapi ./openapi.json --dry-run      # plan only
+fastly-sync sync all --openapi ./openapi.json --no-confirm   # skip the prompt (CI)
 
-# Apply: prints the plan, asks for confirmation, then clones the active
-# version, reconciles cache settings + rate limiters, and activates it.
-fastly-sync sync --openapi https://api.example.com/openapi.json
-fastly-sync sync --openapi ./openapi.json --no-confirm   # skip the prompt (CI)
-
-# Apply a single component (one clone/activate either way):
-fastly-sync sync --openapi ./openapi.json --only cdn
-fastly-sync sync --openapi ./openapi.json --skip ratelimit
-
-# Show the live config applied on Fastly (CDN, rate limiters, WAF IPs):
-fastly-sync show
+# Apply a single target (each its own clone/activate):
+fastly-sync sync cdn          --openapi ./openapi.json
+fastly-sync sync rate-limiter --openapi ./openapi.json
 
 # WAF IP blacklisting: reconcile an Edge ACL from a text blocklist.
-fastly-sync waf sync --blocklist ./blocklist.txt --bootstrap   # one-time ACL + VCL
-fastly-sync waf sync --blocklist https://feeds.example.com/bad-ips.txt --dry-run
-fastly-sync waf sync --blocklist ./blocklist.txt               # ongoing sync
+fastly-sync sync waf --blocklist ./blocklist.txt --bootstrap   # one-time ACL + VCL
+fastly-sync sync waf --blocklist https://feeds.example.com/bad-ips.txt
+fastly-sync sync waf --blocklist ./blocklist.txt --dry-run
 
-# Export the live ACL back to the blocklist text format.
-fastly-sync waf export > blocklist.txt
-fastly-sync waf export --output blocklist.txt
+# Show the live config applied on Fastly, per target (or `all`):
+fastly-sync show all
+fastly-sync show cdn
+fastly-sync show rate-limiter
+fastly-sync show waf                       # print the blocklist
+fastly-sync show waf --output blocklist.txt   # export the blocklist (round-trips)
 
 # Shell completion (Typer):
 fastly-sync --install-completion
@@ -72,7 +71,7 @@ fastly-sync --install-completion
 
 ### WAF IP blacklisting
 
-`fastly-sync waf sync` reconciles a Fastly **Edge ACL** from a text blocklist
+`fastly-sync sync waf` reconciles a Fastly **Edge ACL** from a text blocklist
 (one IP or CIDR per line, `#` for comments), local or remote. Entries are
 validated with Python's `ipaddress`, so IPv4, IPv6 and subnets all work:
 
@@ -93,10 +92,9 @@ snippet (`if (client.ip ~ waf_blocklist) { error 403 "Forbidden"; }`) on a new
 activated version; subsequent runs only touch the ACL entries. Use
 `--acl-name` to target a differently named ACL (default `waf_blocklist`).
 
-`fastly-sync waf export` does the reverse: it reads the live ACL entries and
-writes them in the blocklist text format to stdout (or `--output FILE`), so you
-can snapshot, diff or version the current blocklist. The output round-trips
-back through `waf sync`.
+`fastly-sync show waf` prints the live ACL entries; with `--output FILE` it
+writes them in the blocklist text format, so you can snapshot, diff or version
+the current blocklist. The output round-trips back through `sync waf`.
 
 ### OpenAPI CDN cache extension
 
@@ -161,12 +159,12 @@ cache setting / condition / serve-stale header, a removed rate limiter). Pass
 Pruning is **scoped to objects fastly-sync owns** — managed rate limiters are
 named with an `fsync-` prefix and cache settings are matched through their
 `cache-…` condition — so configuration created by hand is never deleted. A
-scoped run (`--only` / `--skip`) only ever touches the component it targets.
+targeted run (`sync cdn` / `sync rate-limiter`) only ever touches that target.
 
-Before applying, `sync` (and `waf sync`) prints a **plan** and asks for
+Before applying, every `sync` target prints a **plan** and asks for
 confirmation. Use `--dry-run` to print the plan and stop, or `--no-confirm` to
-apply without prompting (CI). `show` prints the live CDN, rate limiter and WAF
-configuration currently applied on Fastly.
+apply without prompting (CI). `show <target>` prints the live CDN, rate limiter
+and WAF configuration currently applied on Fastly.
 
 ## Getting started (development)
 

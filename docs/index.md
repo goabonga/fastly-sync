@@ -16,19 +16,22 @@ pip install fastly-sync
 export FASTLY_API_TOKEN=...
 export FASTLY_SERVICE_ID=...
 
-fastly-sync sync --openapi ./openapi.json --dry-run        # print the plan
-fastly-sync sync --openapi https://api.example.com/openapi.json  # plan + confirm
-fastly-sync sync --openapi ./openapi.json --no-confirm     # apply without prompt
+# CDN + rate limiters from an OpenAPI spec (one clone/activate):
+fastly-sync sync all --openapi https://api.example.com/openapi.json
+fastly-sync sync all --openapi ./openapi.json --dry-run      # plan only
+fastly-sync sync all --openapi ./openapi.json --no-confirm   # apply unprompted
 
-# Show the live config applied on Fastly (CDN, rate limiters, WAF IPs):
-fastly-sync show
+# A single target:
+fastly-sync sync cdn          --openapi ./openapi.json
+fastly-sync sync rate-limiter --openapi ./openapi.json
 
 # WAF IP blacklisting from a text blocklist (one IP/CIDR per line):
-fastly-sync waf sync --blocklist ./blocklist.txt --bootstrap
-fastly-sync waf sync --blocklist ./blocklist.txt --dry-run
+fastly-sync sync waf --blocklist ./blocklist.txt --bootstrap
+fastly-sync sync waf --blocklist ./blocklist.txt --dry-run
 
-# Export the live ACL back to the blocklist format:
-fastly-sync waf export --output blocklist.txt
+# Show the live config applied on Fastly, per target:
+fastly-sync show all
+fastly-sync show waf --output blocklist.txt   # export the blocklist
 ```
 
 `sync` is declarative: by default it also prunes managed objects no longer in
