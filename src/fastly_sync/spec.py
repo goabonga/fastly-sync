@@ -7,16 +7,14 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 
 from .errors import SpecError
+from .loader import read_source
 from .models import CdnEndpoint, DesiredState, RateLimiterRule
 
-_HTTP_SCHEMES = {"http", "https"}
 _HTTP_METHODS = {
     "get",
     "put",
@@ -43,13 +41,10 @@ def load_spec(source: str, *, client: httpx.Client | None = None) -> dict[str, A
         client: optional pre-configured client used for remote fetches.
 
     Raises:
-        SpecError: if the document cannot be read, fetched, or parsed.
+        SourceError: if the document cannot be read or fetched.
+        SpecError: if the document is not valid JSON or not a JSON object.
     """
-    parsed = urlparse(source)
-    if parsed.scheme in _HTTP_SCHEMES:
-        text = _fetch_remote(source, client)
-    else:
-        text = _read_local(source)
+    text = read_source(source, client=client)
 
     try:
         data = json.loads(text)
@@ -59,27 +54,6 @@ def load_spec(source: str, *, client: httpx.Client | None = None) -> dict[str, A
     if not isinstance(data, dict):
         raise SpecError(f"OpenAPI spec '{source}' must be a JSON object")
     return data
-
-
-def _read_local(source: str) -> str:
-    try:
-        return Path(source).read_text(encoding="utf-8")
-    except OSError as exc:
-        raise SpecError(f"cannot read OpenAPI spec '{source}': {exc}") from exc
-
-
-def _fetch_remote(source: str, client: httpx.Client | None) -> str:
-    owns_client = client is None
-    active = client if client is not None else httpx.Client(timeout=30.0)
-    try:
-        response = active.get(source)
-        response.raise_for_status()
-        return response.text
-    except httpx.HTTPError as exc:
-        raise SpecError(f"cannot fetch OpenAPI spec '{source}': {exc}") from exc
-    finally:
-        if owns_client:
-            active.close()
 
 
 def build_desired_state(spec: dict[str, Any]) -> DesiredState:

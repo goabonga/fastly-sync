@@ -10,8 +10,16 @@ class FastlySyncError(Exception):
     """Base class for every error raised by fastly-sync."""
 
 
+class SourceError(FastlySyncError):
+    """Raised when a local or remote source cannot be read or fetched."""
+
+
 class SpecError(FastlySyncError):
-    """Raised when an OpenAPI spec cannot be loaded or parsed."""
+    """Raised when an OpenAPI spec is malformed once loaded."""
+
+
+class BlocklistError(FastlySyncError):
+    """Raised when an IP blocklist contains an invalid entry."""
 
 
 class ConfigError(FastlySyncError):

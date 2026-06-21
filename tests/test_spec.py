@@ -6,8 +6,8 @@ import json
 import httpx
 import pytest
 
-from fastly_sync import spec as spec_module
-from fastly_sync.errors import SpecError
+from fastly_sync import loader as loader_module
+from fastly_sync.errors import SourceError, SpecError
 from fastly_sync.spec import build_desired_state, load_spec
 
 SAMPLE = {
@@ -31,7 +31,7 @@ def test_load_local_spec(tmp_path):
 
 
 def test_load_local_missing_file(tmp_path):
-    with pytest.raises(SpecError, match="cannot read"):
+    with pytest.raises(SourceError, match="cannot read"):
         load_spec(str(tmp_path / "absent.json"))
 
 
@@ -62,7 +62,7 @@ def test_load_remote_http_error():
     transport = httpx.MockTransport(lambda request: httpx.Response(404))
     with (
         httpx.Client(transport=transport) as client,
-        pytest.raises(SpecError, match="cannot fetch"),
+        pytest.raises(SourceError, match="cannot fetch"),
     ):
         load_spec("https://example.test/openapi.json", client=client)
 
@@ -72,7 +72,7 @@ def test_load_remote_creates_and_closes_own_client(monkeypatch):
         lambda request: httpx.Response(200, text=json.dumps(SAMPLE))
     )
     owned = httpx.Client(transport=transport)
-    monkeypatch.setattr(spec_module.httpx, "Client", lambda **kwargs: owned)
+    monkeypatch.setattr(loader_module.httpx, "Client", lambda **kwargs: owned)
     data = load_spec("http://example.test/openapi.json")
     assert data["openapi"] == "3.0.0"
     assert owned.is_closed
