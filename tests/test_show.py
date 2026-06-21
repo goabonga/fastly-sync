@@ -17,6 +17,10 @@ def _full_handler(request):
     path = request.url.path
     if path.endswith("/version") and request.method == "GET":
         return httpx.Response(200, json=[{"number": 4, "active": True}])
+    if path.endswith("/condition"):
+        return httpx.Response(
+            200, json=[{"name": "cache-widgets", "comment": "Public widgets"}]
+        )
     if path.endswith("/cache_settings"):
         return httpx.Response(
             200,
@@ -57,6 +61,7 @@ def test_gather_reports_only_owned_objects():
     config = gather(_client(_full_handler))
     assert config.version == 4
     assert [c["name"] for c in config.cache_settings] == ["/widgets"]
+    assert config.cache_settings[0]["description"] == "Public widgets"
     assert [r["name"] for r in config.rate_limiters] == ["fsync-widgets"]
     assert config.blocklist == (BlockEntry("198.51.100.7", None, "bad"),)
 

@@ -112,6 +112,10 @@ def _show_handler(request):
     path = request.url.path
     if path.endswith("/version") and request.method == "GET":
         return httpx.Response(200, json=[{"number": 3, "active": True}])
+    if path.endswith("/condition"):
+        return httpx.Response(
+            200, json=[{"name": "cache-widgets", "comment": "Public widgets"}]
+        )
     if path.endswith("/cache_settings"):
         return httpx.Response(
             200,
@@ -410,7 +414,7 @@ def test_show_cdn(monkeypatch):
     monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
     result = runner.invoke(cli.app, ["show", "cdn", *_creds()])
     assert result.exit_code == 0
-    assert "/widgets  action=cache ttl=60" in result.output
+    assert "/widgets  action=cache ttl=60  # Public widgets" in result.output
     assert "WAF blocklist" not in result.output
 
 

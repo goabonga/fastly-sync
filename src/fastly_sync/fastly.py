@@ -98,6 +98,7 @@ class FastlyClient:
                 "statement": endpoint.match_statement,
                 "type": "CACHE",
                 "priority": 10,
+                "comment": endpoint.description,
             },
         )
 

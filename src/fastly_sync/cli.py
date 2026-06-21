@@ -328,11 +328,13 @@ def _render_version(config: LiveConfig) -> str:
 
 def _render_cdn(config: LiveConfig) -> str:
     lines = [f"CDN cache settings ({len(config.cache_settings)}):"]
-    lines += [
-        f"  {setting.get('name')}  "
-        f"action={setting.get('action')} ttl={setting.get('ttl')}"
-        for setting in config.cache_settings
-    ]
+    for setting in config.cache_settings:
+        description = setting.get("description") or ""
+        suffix = f"  # {description}" if description else ""
+        lines.append(
+            f"  {setting.get('name')}  "
+            f"action={setting.get('action')} ttl={setting.get('ttl')}{suffix}"
+        )
     return _lines(*lines)
 
 

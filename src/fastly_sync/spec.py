@@ -127,6 +127,7 @@ def _cache_for(
         stale_if_error=stale_if_error,
         condition_name=condition_name,
         match_statement=match_statement,
+        description=str(extension.get("description", "")),
     )
 
 

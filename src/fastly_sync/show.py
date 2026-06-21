@@ -33,8 +33,17 @@ def gather(client: FastlyClient, acl_name: str = DEFAULT_ACL_NAME) -> LiveConfig
     created config is ignored. The blocklist is empty when the ACL is absent.
     """
     version = client.get_active_version()
+    # The cache_settings object has no comment field, so descriptions live on
+    # the matching condition's comment (see fastly.upsert_condition).
+    comments = {
+        str(cond.get("name", "")): str(cond.get("comment", ""))
+        for cond in client.list_conditions(version)
+    }
     cache_settings = [
-        setting
+        {
+            **setting,
+            "description": comments.get(str(setting.get("cache_condition", "")), ""),
+        }
         for setting in client.list_cache_settings(version)
         if str(setting.get("cache_condition", "")).startswith(_OWNED_CONDITION_PREFIX)
     ]

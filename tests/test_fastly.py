@@ -60,6 +60,7 @@ def test_mutating_calls_issue_requests():
         ttl=60,
         condition_name="cache-w",
         match_statement='req.url ~ "^/w"',
+        description="Public widgets",
     )
     client.upsert_condition(7, endpoint)
     client.upsert_cache_setting(7, endpoint)
@@ -75,6 +76,10 @@ def test_mutating_calls_issue_requests():
         body for _, path, body in seen if path.endswith("/cache_settings//w")
     )
     assert "cache_condition=cache-w" in cache_body
+    condition_body = next(
+        body for _, path, body in seen if path.endswith("/condition/cache-w")
+    )
+    assert "comment=Public+widgets" in condition_body
 
 
 def test_serve_stale_header_sets_surrogate_control():

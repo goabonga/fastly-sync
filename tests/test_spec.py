@@ -140,6 +140,16 @@ def test_sibling_paths_do_not_overlap():
     assert statements["/widgets"] == r'req.url ~ "^/widgets(?:\?|$)"'
 
 
+def test_cache_extension_description():
+    state = build_desired_state(
+        {"paths": {"/w": {"get": {}, "x-fastly-cache": {"description": "Public API"}}}}
+    )
+    assert state.endpoints[0].description == "Public API"
+    # No extension -> empty description.
+    plain = build_desired_state({"paths": {"/h": {"get": {}}}})
+    assert plain.endpoints[0].description == ""
+
+
 def test_cache_extension_can_force_pass_on_read_endpoint():
     state = build_desired_state(
         {"paths": {"/w": {"get": {}, "x-fastly-cache": {"action": "pass"}}}}
