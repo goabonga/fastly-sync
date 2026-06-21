@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Chris <goabonga@pm.me>
 
 from fastly_sync.models import CdnEndpoint, DesiredState, RateLimiterRule
-from fastly_sync.sync import Component, select_state, synchronize
+from fastly_sync.sync import ALL_COMPONENTS, Component, select_state, synchronize
 
 STATE = DesiredState(
     endpoints=(
@@ -191,32 +191,26 @@ def test_no_prune_keeps_orphans():
     assert not any(c[0].startswith("delete_") for c in client.calls)
 
 
-def test_select_state_default_keeps_everything():
-    selected = select_state(STATE)
+def test_select_state_all_keeps_everything():
+    selected = select_state(STATE, ALL_COMPONENTS)
     assert selected == STATE
 
 
-def test_select_state_only_cdn():
-    selected = select_state(STATE, only=Component.CDN)
+def test_select_state_cdn_only():
+    selected = select_state(STATE, {Component.CDN})
     assert selected.endpoints == STATE.endpoints
     assert selected.rate_limiters == ()
 
 
-def test_select_state_only_ratelimit():
-    selected = select_state(STATE, only=Component.RATELIMIT)
+def test_select_state_ratelimit_only():
+    selected = select_state(STATE, {Component.RATELIMIT})
     assert selected.endpoints == ()
     assert selected.rate_limiters == STATE.rate_limiters
 
 
-def test_select_state_skip_cdn():
-    selected = select_state(STATE, skip=Component.CDN)
+def test_select_state_empty_drops_everything():
+    selected = select_state(STATE, set())
     assert selected.endpoints == ()
-    assert selected.rate_limiters == STATE.rate_limiters
-
-
-def test_select_state_skip_ratelimit():
-    selected = select_state(STATE, skip=Component.RATELIMIT)
-    assert selected.endpoints == STATE.endpoints
     assert selected.rate_limiters == ()
 
 

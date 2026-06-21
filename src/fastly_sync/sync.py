@@ -25,30 +25,10 @@ class Component(StrEnum):
 ALL_COMPONENTS: frozenset[Component] = frozenset(Component)
 
 
-def resolve_components(
-    only: Component | None = None, skip: Component | None = None
-) -> frozenset[Component]:
-    """Return the set of components in scope for a run (for sync and prune)."""
-    components = set(ALL_COMPONENTS)
-    if only is not None:
-        components = {only}
-    if skip is not None:
-        components.discard(skip)
-    return frozenset(components)
-
-
 def select_state(
-    state: DesiredState,
-    *,
-    only: Component | None = None,
-    skip: Component | None = None,
+    state: DesiredState, components: Collection[Component]
 ) -> DesiredState:
-    """Return ``state`` narrowed to the requested components.
-
-    ``only`` keeps a single component; ``skip`` drops one. They are independent
-    here — the CLI rejects passing both at once.
-    """
-    components = resolve_components(only, skip)
+    """Return ``state`` narrowed to ``components`` (the targeted sub-command)."""
     return DesiredState(
         endpoints=state.endpoints if Component.CDN in components else (),
         rate_limiters=(

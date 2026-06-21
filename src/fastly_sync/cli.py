@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from pathlib import Path
 
 import typer
@@ -16,15 +16,10 @@ from .config import load_settings
 from .errors import FastlySyncError
 from .fastly import FastlyClient
 from .models import SyncResult
-from .show import gather
+from .show import LiveConfig, gather
 from .spec import build_desired_state, load_spec
-from .sync import Component, resolve_components, select_state, synchronize
-from .waf import (
-    DEFAULT_ACL_NAME,
-    bootstrap_acl,
-    export_blocklist,
-    synchronize_blocklist,
-)
+from .sync import ALL_COMPONENTS, Component, select_state, synchronize
+from .waf import DEFAULT_ACL_NAME, bootstrap_acl, synchronize_blocklist
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -35,12 +30,26 @@ app = typer.Typer(
         "and the WAF IP blocklist (Edge ACL) from a text file."
     ),
 )
-waf_app = typer.Typer(
-    no_args_is_help=True,
-    help="Manage the WAF IP blocklist backed by a Fastly Edge ACL.",
+sync_app = typer.Typer(
+    no_args_is_help=True, help="Apply configuration to Fastly (per target)."
 )
-app.add_typer(waf_app, name="waf")
+show_app = typer.Typer(
+    no_args_is_help=True, help="Show the live configuration applied on Fastly."
+)
+app.add_typer(sync_app, name="sync")
+app.add_typer(show_app, name="show")
 
+_OPENAPI_OPTION = typer.Option(
+    ..., "--openapi", metavar="PATH_OR_URL", help="path or URL to openapi.json"
+)
+_PRUNE_OPTION = typer.Option(
+    True,
+    "--prune/--no-prune",
+    help="delete managed objects no longer in the spec (default: on)",
+)
+_ACL_NAME_OPTION = typer.Option(
+    DEFAULT_ACL_NAME, "--acl-name", help="name of the WAF Edge ACL"
+)
 _TOKEN_OPTION = typer.Option(
     None, "--token", help="Fastly API token ($FASTLY_API_TOKEN)"
 )
@@ -48,7 +57,7 @@ _SERVICE_OPTION = typer.Option(
     None, "--service-id", help="Fastly service id ($FASTLY_SERVICE_ID)"
 )
 _DRY_RUN_OPTION = typer.Option(
-    False, "--dry-run", help="report the changes without applying them"
+    False, "--dry-run", help="report the plan without applying it"
 )
 _NO_CONFIRM_OPTION = typer.Option(
     False, "--no-confirm", help="apply without the interactive confirmation prompt"
@@ -101,37 +110,22 @@ def _root(
     """fastly-sync command-line interface."""
 
 
-@app.command()
-def sync(
-    openapi: str = typer.Option(
-        ..., "--openapi", metavar="PATH_OR_URL", help="path or URL to openapi.json"
-    ),
-    only: Component | None = typer.Option(
-        None, "--only", help="apply only this component (cdn or ratelimit)"
-    ),
-    skip: Component | None = typer.Option(
-        None, "--skip", help="apply everything except this component"
-    ),
-    prune: bool = typer.Option(
-        True,
-        "--prune/--no-prune",
-        help="delete managed objects no longer in the spec (default: on)",
-    ),
-    no_confirm: bool = _NO_CONFIRM_OPTION,
-    token: str | None = _TOKEN_OPTION,
-    service_id: str | None = _SERVICE_OPTION,
-    dry_run: bool = _DRY_RUN_OPTION,
-) -> None:
-    """Synchronise CDN cache and rate limiters from an OpenAPI document."""
-    if only is not None and skip is not None:
-        raise typer.BadParameter("--only and --skip are mutually exclusive")
+# --- sync <target> -----------------------------------------------------
 
+
+def _run_openapi_sync(
+    *,
+    openapi: str,
+    components: Collection[Component],
+    prune: bool,
+    no_confirm: bool,
+    dry_run: bool,
+    token: str | None,
+    service_id: str | None,
+) -> None:
     def run() -> None:
         settings = load_settings(token, service_id)
-        components = resolve_components(only, skip)
-        state = select_state(
-            build_desired_state(load_spec(openapi)), only=only, skip=skip
-        )
+        state = select_state(build_desired_state(load_spec(openapi)), components)
         with FastlyClient(settings.token, settings.service_id) as client:
             plan = synchronize(
                 state, client, components=components, prune=prune, dry_run=True
@@ -153,54 +147,123 @@ def sync(
     _guard(run)
 
 
-@app.command()
-def show(
-    acl_name: str = typer.Option(
-        DEFAULT_ACL_NAME, "--acl-name", help="name of the WAF Edge ACL"
-    ),
+@sync_app.command("cdn")
+def sync_cdn(
+    openapi: str = _OPENAPI_OPTION,
+    prune: bool = _PRUNE_OPTION,
+    no_confirm: bool = _NO_CONFIRM_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
 ) -> None:
-    """Show the live CDN, rate limiter and WAF config applied on Fastly."""
-
-    def run() -> None:
-        settings = load_settings(token, service_id)
-        with FastlyClient(settings.token, settings.service_id) as client:
-            config = gather(client, acl_name)
-
-        typer.echo(f"fastly-sync: active version {config.version}")
-        typer.echo(f"CDN cache settings ({len(config.cache_settings)}):")
-        for setting in config.cache_settings:
-            typer.echo(
-                f"  {setting.get('name')}  "
-                f"action={setting.get('action')} ttl={setting.get('ttl')}"
-            )
-        typer.echo(f"Rate limiters ({len(config.rate_limiters)}):")
-        for limiter in config.rate_limiters:
-            typer.echo(
-                f"  {limiter.get('name')}  "
-                f"{limiter.get('rps_limit')} req / {limiter.get('window_size')}s"
-            )
-        typer.echo(f"WAF blocklist '{acl_name}' ({len(config.blocklist)}):")
-        for entry in config.blocklist:
-            cidr = entry.ip if entry.subnet is None else f"{entry.ip}/{entry.subnet}"
-            suffix = f"  # {entry.comment}" if entry.comment else ""
-            typer.echo(f"  {cidr}{suffix}")
-
-    _guard(run)
+    """Synchronise only the CDN cache settings."""
+    _run_openapi_sync(
+        openapi=openapi,
+        components=frozenset({Component.CDN}),
+        prune=prune,
+        no_confirm=no_confirm,
+        dry_run=dry_run,
+        token=token,
+        service_id=service_id,
+    )
 
 
-@waf_app.command("sync")
-def waf_sync(
+@sync_app.command("rate-limiter")
+def sync_rate_limiter(
+    openapi: str = _OPENAPI_OPTION,
+    prune: bool = _PRUNE_OPTION,
+    no_confirm: bool = _NO_CONFIRM_OPTION,
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Synchronise only the rate limiters."""
+    _run_openapi_sync(
+        openapi=openapi,
+        components=frozenset({Component.RATELIMIT}),
+        prune=prune,
+        no_confirm=no_confirm,
+        dry_run=dry_run,
+        token=token,
+        service_id=service_id,
+    )
+
+
+@sync_app.command("all")
+def sync_all(
+    openapi: str = _OPENAPI_OPTION,
     blocklist: str = typer.Option(
         ...,
         "--blocklist",
         metavar="PATH_OR_URL",
         help="path or URL to the IP/CIDR blocklist (one per line)",
     ),
-    acl_name: str = typer.Option(
-        DEFAULT_ACL_NAME, "--acl-name", help="name of the Edge ACL"
+    acl_name: str = _ACL_NAME_OPTION,
+    bootstrap: bool = typer.Option(
+        False, "--bootstrap", help="create the WAF ACL and VCL snippet before syncing"
     ),
+    prune: bool = _PRUNE_OPTION,
+    no_confirm: bool = _NO_CONFIRM_OPTION,
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Synchronise CDN cache, rate limiters and the WAF blocklist together."""
+
+    def run() -> None:
+        settings = load_settings(token, service_id)
+        state = select_state(build_desired_state(load_spec(openapi)), ALL_COMPONENTS)
+        entries = load_blocklist(blocklist)
+        with FastlyClient(settings.token, settings.service_id) as client:
+            plan = synchronize(
+                state, client, components=ALL_COMPONENTS, prune=prune, dry_run=True
+            )
+            _echo_sync_plan(plan)
+            if bootstrap:
+                typer.echo(
+                    f"fastly-sync plan: bootstrap ACL '{acl_name}' and load "
+                    f"{len(entries)} entry(ies)"
+                )
+            else:
+                waf_plan = synchronize_blocklist(
+                    entries, client, acl_name, dry_run=True
+                )
+                typer.echo(
+                    f"fastly-sync plan: ACL '{acl_name}' "
+                    f"+{len(waf_plan.added)} / -{len(waf_plan.removed)}"
+                )
+            if dry_run:
+                typer.echo("(dry run — nothing applied)")
+                return
+            if not _confirmed(no_confirm):
+                return
+            result = synchronize(
+                state, client, components=ALL_COMPONENTS, prune=prune, dry_run=False
+            )
+            typer.echo(
+                f"fastly-sync: applied {len(result.applied)} change(s), "
+                f"pruned {len(result.removed)} orphan(s)"
+            )
+            if bootstrap:
+                bootstrap_acl(client, acl_name)
+            waf_result = synchronize_blocklist(entries, client, acl_name, dry_run=False)
+            typer.echo(
+                f"fastly-sync: applied blocklist '{waf_result.acl_name}': "
+                f"+{len(waf_result.added)} / -{len(waf_result.removed)}"
+            )
+
+    _guard(run)
+
+
+@sync_app.command("waf")
+def sync_waf(
+    blocklist: str = typer.Option(
+        ...,
+        "--blocklist",
+        metavar="PATH_OR_URL",
+        help="path or URL to the IP/CIDR blocklist (one per line)",
+    ),
+    acl_name: str = _ACL_NAME_OPTION,
     bootstrap: bool = typer.Option(
         False, "--bootstrap", help="create the ACL and VCL snippet before syncing"
     ),
@@ -248,30 +311,125 @@ def waf_sync(
     _guard(run)
 
 
-@waf_app.command("export")
-def waf_export(
-    acl_name: str = typer.Option(
-        DEFAULT_ACL_NAME, "--acl-name", help="name of the Edge ACL"
-    ),
+# --- show <target> -----------------------------------------------------
+
+
+def _echo_version(config: LiveConfig) -> None:
+    typer.echo(f"fastly-sync: active version {config.version}")
+
+
+def _echo_cdn(config: LiveConfig) -> None:
+    typer.echo(f"CDN cache settings ({len(config.cache_settings)}):")
+    for setting in config.cache_settings:
+        typer.echo(
+            f"  {setting.get('name')}  "
+            f"action={setting.get('action')} ttl={setting.get('ttl')}"
+        )
+
+
+def _echo_rate_limiters(config: LiveConfig) -> None:
+    typer.echo(f"Rate limiters ({len(config.rate_limiters)}):")
+    for limiter in config.rate_limiters:
+        typer.echo(
+            f"  {limiter.get('name')}  "
+            f"{limiter.get('rps_limit')} req / {limiter.get('window_size')}s"
+        )
+
+
+def _echo_waf(config: LiveConfig, acl_name: str) -> None:
+    typer.echo(f"WAF blocklist '{acl_name}' ({len(config.blocklist)}):")
+    for entry in config.blocklist:
+        cidr = entry.ip if entry.subnet is None else f"{entry.ip}/{entry.subnet}"
+        suffix = f"  # {entry.comment}" if entry.comment else ""
+        typer.echo(f"  {cidr}{suffix}")
+
+
+def _show(
+    token: str | None,
+    service_id: str | None,
+    render: Callable[[LiveConfig], None],
+    acl_name: str = DEFAULT_ACL_NAME,
+) -> None:
+    def run() -> None:
+        settings = load_settings(token, service_id)
+        with FastlyClient(settings.token, settings.service_id) as client:
+            config = gather(client, acl_name)
+        render(config)
+
+    _guard(run)
+
+
+@show_app.command("cdn")
+def show_cdn(
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+) -> None:
+    """Show the live CDN cache settings."""
+
+    def render(config: LiveConfig) -> None:
+        _echo_version(config)
+        _echo_cdn(config)
+
+    _show(token, service_id, render)
+
+
+@show_app.command("rate-limiter")
+def show_rate_limiter(
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+) -> None:
+    """Show the live rate limiters."""
+
+    def render(config: LiveConfig) -> None:
+        _echo_version(config)
+        _echo_rate_limiters(config)
+
+    _show(token, service_id, render)
+
+
+@show_app.command("all")
+def show_all(
+    acl_name: str = _ACL_NAME_OPTION,
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+) -> None:
+    """Show the live CDN, rate limiter and WAF config."""
+
+    def render(config: LiveConfig) -> None:
+        _echo_version(config)
+        _echo_cdn(config)
+        _echo_rate_limiters(config)
+        _echo_waf(config, acl_name)
+
+    _show(token, service_id, render, acl_name)
+
+
+@show_app.command("waf")
+def show_waf(
+    acl_name: str = _ACL_NAME_OPTION,
     output: Path | None = typer.Option(
-        None, "--output", "-o", help="write to this file instead of stdout"
+        None,
+        "--output",
+        "-o",
+        help="write the blocklist to this file instead of stdout",
     ),
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Export the current Edge ACL entries to the text blocklist format."""
+    """Show the live WAF blocklist (``--output`` writes the blocklist format)."""
 
     def run() -> None:
         settings = load_settings(token, service_id)
         with FastlyClient(settings.token, settings.service_id) as client:
-            entries = export_blocklist(client, acl_name)
-        text = dump_blocklist(entries)
+            config = gather(client, acl_name)
         if output is None:
-            typer.echo(text, nl=False)
+            _echo_version(config)
+            _echo_waf(config, acl_name)
         else:
-            output.write_text(text, encoding="utf-8")
+            output.write_text(dump_blocklist(config.blocklist), encoding="utf-8")
             typer.echo(
-                f"fastly-sync: wrote {len(entries)} entry(ies) to {output}", err=True
+                f"fastly-sync: wrote {len(config.blocklist)} entry(ies) to {output}",
+                err=True,
             )
 
     _guard(run)
