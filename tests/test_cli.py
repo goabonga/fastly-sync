@@ -422,6 +422,27 @@ def test_show_rate_limiter(monkeypatch):
     assert "CDN cache settings" not in result.output
 
 
+def test_show_cdn_output_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    out = tmp_path / "cdn.txt"
+    result = runner.invoke(cli.app, ["show", "cdn", *_creds("--output", str(out))])
+    assert result.exit_code == 0
+    written = out.read_text(encoding="utf-8")
+    assert "active version 3" in written
+    assert "/widgets  action=cache ttl=60" in written
+    assert f"wrote to {out}" in result.output
+
+
+def test_show_rate_limiter_output_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    out = tmp_path / "rl.txt"
+    result = runner.invoke(
+        cli.app, ["show", "rate-limiter", *_creds("--output", str(out))]
+    )
+    assert result.exit_code == 0
+    assert "fsync-widgets  100 req / 60s" in out.read_text(encoding="utf-8")
+
+
 def test_show_waf_stdout(monkeypatch):
     monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
     result = runner.invoke(cli.app, ["show", "waf", *_creds()])

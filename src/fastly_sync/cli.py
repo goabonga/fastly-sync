@@ -313,78 +313,100 @@ def sync_waf(
 
 # --- show <target> -----------------------------------------------------
 
-
-def _echo_version(config: LiveConfig) -> None:
-    typer.echo(f"fastly-sync: active version {config.version}")
-
-
-def _echo_cdn(config: LiveConfig) -> None:
-    typer.echo(f"CDN cache settings ({len(config.cache_settings)}):")
-    for setting in config.cache_settings:
-        typer.echo(
-            f"  {setting.get('name')}  "
-            f"action={setting.get('action')} ttl={setting.get('ttl')}"
-        )
+_OUTPUT_OPTION = typer.Option(
+    None, "--output", "-o", help="write the output to this file instead of stdout"
+)
 
 
-def _echo_rate_limiters(config: LiveConfig) -> None:
-    typer.echo(f"Rate limiters ({len(config.rate_limiters)}):")
-    for limiter in config.rate_limiters:
-        typer.echo(
-            f"  {limiter.get('name')}  "
-            f"{limiter.get('rps_limit')} req / {limiter.get('window_size')}s"
-        )
+def _lines(*parts: str) -> str:
+    return "".join(f"{part}\n" for part in parts)
 
 
-def _echo_waf(config: LiveConfig, acl_name: str) -> None:
-    typer.echo(f"WAF blocklist '{acl_name}' ({len(config.blocklist)}):")
+def _render_version(config: LiveConfig) -> str:
+    return _lines(f"fastly-sync: active version {config.version}")
+
+
+def _render_cdn(config: LiveConfig) -> str:
+    lines = [f"CDN cache settings ({len(config.cache_settings)}):"]
+    lines += [
+        f"  {setting.get('name')}  "
+        f"action={setting.get('action')} ttl={setting.get('ttl')}"
+        for setting in config.cache_settings
+    ]
+    return _lines(*lines)
+
+
+def _render_rate_limiters(config: LiveConfig) -> str:
+    lines = [f"Rate limiters ({len(config.rate_limiters)}):"]
+    lines += [
+        f"  {limiter.get('name')}  "
+        f"{limiter.get('rps_limit')} req / {limiter.get('window_size')}s"
+        for limiter in config.rate_limiters
+    ]
+    return _lines(*lines)
+
+
+def _render_waf(config: LiveConfig, acl_name: str) -> str:
+    lines = [f"WAF blocklist '{acl_name}' ({len(config.blocklist)}):"]
     for entry in config.blocklist:
         cidr = entry.ip if entry.subnet is None else f"{entry.ip}/{entry.subnet}"
         suffix = f"  # {entry.comment}" if entry.comment else ""
-        typer.echo(f"  {cidr}{suffix}")
+        lines.append(f"  {cidr}{suffix}")
+    return _lines(*lines)
+
+
+def _emit(text: str, output: Path | None) -> None:
+    if output is None:
+        typer.echo(text, nl=False)
+    else:
+        output.write_text(text, encoding="utf-8")
+        typer.echo(f"fastly-sync: wrote to {output}", err=True)
 
 
 def _show(
     token: str | None,
     service_id: str | None,
-    render: Callable[[LiveConfig], None],
+    render: Callable[[LiveConfig], str],
+    output: Path | None,
     acl_name: str = DEFAULT_ACL_NAME,
 ) -> None:
     def run() -> None:
         settings = load_settings(token, service_id)
         with FastlyClient(settings.token, settings.service_id) as client:
             config = gather(client, acl_name)
-        render(config)
+        _emit(render(config), output)
 
     _guard(run)
 
 
 @show_app.command("cdn")
 def show_cdn(
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live CDN cache settings."""
-
-    def render(config: LiveConfig) -> None:
-        _echo_version(config)
-        _echo_cdn(config)
-
-    _show(token, service_id, render)
+    """Show the live CDN cache settings (``--output`` writes to a file)."""
+    _show(
+        token,
+        service_id,
+        lambda config: _render_version(config) + _render_cdn(config),
+        output,
+    )
 
 
 @show_app.command("rate-limiter")
 def show_rate_limiter(
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live rate limiters."""
-
-    def render(config: LiveConfig) -> None:
-        _echo_version(config)
-        _echo_rate_limiters(config)
-
-    _show(token, service_id, render)
+    """Show the live rate limiters (``--output`` writes to a file)."""
+    _show(
+        token,
+        service_id,
+        lambda config: _render_version(config) + _render_rate_limiters(config),
+        output,
+    )
 
 
 @show_app.command("all")
@@ -395,24 +417,21 @@ def show_all(
 ) -> None:
     """Show the live CDN, rate limiter and WAF config."""
 
-    def render(config: LiveConfig) -> None:
-        _echo_version(config)
-        _echo_cdn(config)
-        _echo_rate_limiters(config)
-        _echo_waf(config, acl_name)
+    def render(config: LiveConfig) -> str:
+        return (
+            _render_version(config)
+            + _render_cdn(config)
+            + _render_rate_limiters(config)
+            + _render_waf(config, acl_name)
+        )
 
-    _show(token, service_id, render, acl_name)
+    _show(token, service_id, render, None, acl_name)
 
 
 @show_app.command("waf")
 def show_waf(
     acl_name: str = _ACL_NAME_OPTION,
-    output: Path | None = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="write the blocklist to this file instead of stdout",
-    ),
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
@@ -423,8 +442,9 @@ def show_waf(
         with FastlyClient(settings.token, settings.service_id) as client:
             config = gather(client, acl_name)
         if output is None:
-            _echo_version(config)
-            _echo_waf(config, acl_name)
+            typer.echo(
+                _render_version(config) + _render_waf(config, acl_name), nl=False
+            )
         else:
             output.write_text(dump_blocklist(config.blocklist), encoding="utf-8")
             typer.echo(
