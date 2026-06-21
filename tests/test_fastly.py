@@ -75,6 +75,31 @@ def test_mutating_calls_issue_requests():
     assert "cache_condition=cache-w" in cache_body
 
 
+def test_serve_stale_header_sets_surrogate_control():
+    captured = {}
+
+    def handler(request):
+        captured["path"] = request.url.path
+        captured["body"] = request.content.decode()
+        return httpx.Response(200, json={})
+
+    client, _ = make_client(handler)
+    endpoint = CdnEndpoint(
+        path="/w",
+        methods=("GET",),
+        action="cache",
+        ttl=60,
+        stale_while_revalidate=30,
+        stale_if_error=90,
+        condition_name="cache-w",
+    )
+    client.upsert_serve_stale_header(7, endpoint)
+    assert captured["path"] == "/service/svc/version/7/header/serve-stale-cache-w"
+    assert "stale-while-revalidate%3D30" in captured["body"]
+    assert "stale-if-error%3D90" in captured["body"]
+    assert "cache_condition=cache-w" in captured["body"]
+
+
 def test_request_wraps_http_errors():
     client, _ = make_client(lambda request: httpx.Response(500))
     with pytest.raises(FastlyAPIError, match="failed"):

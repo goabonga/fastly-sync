@@ -124,6 +124,36 @@ class FastlyClient:
             },
         )
 
+    def upsert_serve_stale_header(self, version: int, endpoint: CdnEndpoint) -> None:
+        """Set a ``Surrogate-Control`` header carrying the serve-stale windows.
+
+        This is how ``stale_while_revalidate`` is actually applied (it is not a
+        native ``cache_settings`` field); ``stale_if_error`` is included too so
+        the directive is self-contained. The header is scoped to the endpoint
+        through its cache condition.
+        """
+        directives = []
+        if endpoint.stale_while_revalidate:
+            directives.append(
+                f"stale-while-revalidate={endpoint.stale_while_revalidate}"
+            )
+        if endpoint.stale_if_error:
+            directives.append(f"stale-if-error={endpoint.stale_if_error}")
+        name = f"serve-stale-{endpoint.condition_name}"
+        self._request(
+            "PUT",
+            f"/service/{self._service_id}/version/{version}/header/{name}",
+            data={
+                "name": name,
+                "type": "cache",
+                "action": "set",
+                "dst": "http.Surrogate-Control",
+                "src": ", ".join(directives),
+                "cache_condition": endpoint.condition_name,
+                "priority": 10,
+            },
+        )
+
     def activate_version(self, version: int) -> None:
         """Activate a service version, making its configuration live."""
         self._request("PUT", f"/service/{self._service_id}/version/{version}/activate")

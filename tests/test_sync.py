@@ -37,6 +37,9 @@ class RecordingClient:
     def upsert_cache_setting(self, version, endpoint):
         self.calls.append(("upsert_cache_setting", version, endpoint.path))
 
+    def upsert_serve_stale_header(self, version, endpoint):
+        self.calls.append(("upsert_serve_stale_header", version, endpoint.path))
+
     def upsert_rate_limiter(self, version, rule):
         self.calls.append(("upsert_rate_limiter", version, rule.name))
 
@@ -56,6 +59,27 @@ def test_apply_clones_mutates_and_activates():
     assert ("upsert_cache_setting", 2, "/w") in client.calls
     assert ("upsert_rate_limiter", 2, "w") in client.calls
     assert ("activate_version", 2) in client.calls
+    # No serve-stale header: the cache endpoint has no stale windows.
+    assert not any(call[0] == "upsert_serve_stale_header" for call in client.calls)
+
+
+def test_serve_stale_header_emitted_for_stale_cache():
+    state = DesiredState(
+        endpoints=(
+            CdnEndpoint(
+                path="/w",
+                methods=("GET",),
+                action="cache",
+                ttl=3600,
+                stale_while_revalidate=60,
+                condition_name="cache-w",
+            ),
+        ),
+        rate_limiters=(),
+    )
+    client = RecordingClient()
+    synchronize(state, client)
+    assert ("upsert_serve_stale_header", 2, "/w") in client.calls
 
 
 def test_dry_run_makes_no_mutating_calls():

@@ -29,6 +29,10 @@ def synchronize(
         if not dry_run:
             client.upsert_condition(target, endpoint)
             client.upsert_cache_setting(target, endpoint)
+            if endpoint.action == "cache" and (
+                endpoint.stale_while_revalidate or endpoint.stale_if_error
+            ):
+                client.upsert_serve_stale_header(target, endpoint)
         detail = f"cache, ttl={endpoint.ttl}s" if endpoint.action == "cache" else "pass"
         result.applied.append(SyncAction(kind="cdn", name=endpoint.path, detail=detail))
 
