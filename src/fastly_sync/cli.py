@@ -1,146 +1,167 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Chris <goabonga@pm.me>
 
-"""Command-line entry point for fastly-sync."""
+"""Command-line entry point for fastly-sync (built with Typer)."""
 
 from __future__ import annotations
 
-import argparse
-import sys
-from collections.abc import Sequence
+from collections.abc import Callable
+from pathlib import Path
+
+import typer
 
 from . import __version__
-from .blocklist import load_blocklist
+from .blocklist import dump_blocklist, load_blocklist
 from .config import load_settings
 from .errors import FastlySyncError
 from .fastly import FastlyClient
 from .spec import build_desired_state, load_spec
 from .sync import synchronize
-from .waf import DEFAULT_ACL_NAME, bootstrap_acl, synchronize_blocklist
+from .waf import (
+    DEFAULT_ACL_NAME,
+    bootstrap_acl,
+    export_blocklist,
+    synchronize_blocklist,
+)
+
+app = typer.Typer(
+    no_args_is_help=True,
+    add_completion=True,
+    help=(
+        "Synchronise Fastly configuration on demand: CDN cache and rate "
+        "limiters from a local or remote OpenAPI (openapi.json) document, "
+        "and the WAF IP blocklist (Edge ACL) from a text file."
+    ),
+)
+waf_app = typer.Typer(
+    no_args_is_help=True,
+    help="Manage the WAF IP blocklist backed by a Fastly Edge ACL.",
+)
+app.add_typer(waf_app, name="waf")
+
+_TOKEN_OPTION = typer.Option(
+    None, "--token", help="Fastly API token ($FASTLY_API_TOKEN)"
+)
+_SERVICE_OPTION = typer.Option(
+    None, "--service-id", help="Fastly service id ($FASTLY_SERVICE_ID)"
+)
+_DRY_RUN_OPTION = typer.Option(
+    False, "--dry-run", help="report the changes without applying them"
+)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser."""
-    parser = argparse.ArgumentParser(
-        prog="fastly-sync",
-        description=(
-            "Synchronise Fastly configuration on demand: CDN cache and rate "
-            "limiters from a local or remote OpenAPI (openapi.json) document, "
-            "and the WAF IP blocklist (Edge ACL) from a text file."
-        ),
-    )
-    parser.add_argument(
+def _guard(action: Callable[[], None]) -> None:
+    """Run a command body, mapping domain errors to a clean exit code 1."""
+    try:
+        action()
+    except FastlySyncError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"fastly-sync {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
         "--version",
-        action="version",
-        version=f"fastly-sync {__version__}",
-    )
-    subcommands = parser.add_subparsers(dest="command", required=True)
+        callback=_version_callback,
+        is_eager=True,
+        help="show the version and exit",
+    ),
+) -> None:
+    """fastly-sync command-line interface."""
 
-    sync_parser = subcommands.add_parser(
-        "sync",
-        help="synchronise CDN and rate limiter config from an OpenAPI spec",
-    )
-    sync_parser.add_argument(
-        "--openapi",
-        required=True,
-        metavar="PATH_OR_URL",
-        help="path or http(s) URL to the openapi.json document",
-    )
-    sync_parser.add_argument(
-        "--token",
-        help="Fastly API token (defaults to $FASTLY_API_TOKEN)",
-    )
-    sync_parser.add_argument(
-        "--service-id",
-        help="Fastly service id (defaults to $FASTLY_SERVICE_ID)",
-    )
-    sync_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="report the changes without applying them",
-    )
-    sync_parser.set_defaults(func=_cmd_sync)
 
-    waf_parser = subcommands.add_parser(
-        "waf",
-        help="synchronise the WAF IP blocklist (Edge ACL) from a text file",
-    )
-    waf_parser.add_argument(
+@app.command()
+def sync(
+    openapi: str = typer.Option(
+        ..., "--openapi", metavar="PATH_OR_URL", help="path or URL to openapi.json"
+    ),
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Synchronise CDN cache and rate limiters from an OpenAPI document."""
+
+    def run() -> None:
+        settings = load_settings(token, service_id)
+        state = build_desired_state(load_spec(openapi))
+        with FastlyClient(settings.token, settings.service_id) as client:
+            result = synchronize(state, client, dry_run=dry_run)
+        verb = "would apply" if result.dry_run else "applied"
+        typer.echo(f"fastly-sync: {verb} {len(result.applied)} change(s)")
+        for action in result.applied:
+            typer.echo(f"  [{action.kind}] {action.name} ({action.detail})")
+
+    _guard(run)
+
+
+@waf_app.command("sync")
+def waf_sync(
+    blocklist: str = typer.Option(
+        ...,
         "--blocklist",
-        required=True,
         metavar="PATH_OR_URL",
-        help="path or http(s) URL to the IP/CIDR blocklist (one per line)",
-    )
-    waf_parser.add_argument(
-        "--acl-name",
-        default=DEFAULT_ACL_NAME,
-        help=f"name of the Edge ACL (default: {DEFAULT_ACL_NAME})",
-    )
-    waf_parser.add_argument(
-        "--bootstrap",
-        action="store_true",
-        help="create the ACL and enforcing VCL snippet before syncing entries",
-    )
-    waf_parser.add_argument(
-        "--token",
-        help="Fastly API token (defaults to $FASTLY_API_TOKEN)",
-    )
-    waf_parser.add_argument(
-        "--service-id",
-        help="Fastly service id (defaults to $FASTLY_SERVICE_ID)",
-    )
-    waf_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="report the changes without applying them",
-    )
-    waf_parser.set_defaults(func=_cmd_waf)
-    return parser
+        help="path or URL to the IP/CIDR blocklist (one per line)",
+    ),
+    acl_name: str = typer.Option(
+        DEFAULT_ACL_NAME, "--acl-name", help="name of the Edge ACL"
+    ),
+    bootstrap: bool = typer.Option(
+        False, "--bootstrap", help="create the ACL and VCL snippet before syncing"
+    ),
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+    dry_run: bool = _DRY_RUN_OPTION,
+) -> None:
+    """Reconcile the WAF IP blocklist (Edge ACL) from a text file."""
 
-
-def _cmd_sync(args: argparse.Namespace) -> int:
-    settings = load_settings(args.token, args.service_id)
-    spec = load_spec(args.openapi)
-    state = build_desired_state(spec)
-    with FastlyClient(settings.token, settings.service_id) as client:
-        result = synchronize(state, client, dry_run=args.dry_run)
-
-    verb = "would apply" if result.dry_run else "applied"
-    print(f"fastly-sync: {verb} {len(result.applied)} change(s)")
-    for action in result.applied:
-        print(f"  [{action.kind}] {action.name} ({action.detail})")
-    return 0
-
-
-def _cmd_waf(args: argparse.Namespace) -> int:
-    settings = load_settings(args.token, args.service_id)
-    entries = load_blocklist(args.blocklist)
-    with FastlyClient(settings.token, settings.service_id) as client:
-        if args.bootstrap:
-            bootstrap_acl(client, args.acl_name)
-        result = synchronize_blocklist(
-            entries, client, args.acl_name, dry_run=args.dry_run
+    def run() -> None:
+        settings = load_settings(token, service_id)
+        entries = load_blocklist(blocklist)
+        with FastlyClient(settings.token, settings.service_id) as client:
+            if bootstrap:
+                bootstrap_acl(client, acl_name)
+            result = synchronize_blocklist(entries, client, acl_name, dry_run=dry_run)
+        verb = "would apply" if result.dry_run else "applied"
+        typer.echo(
+            f"fastly-sync: {verb} blocklist '{result.acl_name}': "
+            f"+{len(result.added)} / -{len(result.removed)}"
         )
 
-    verb = "would apply" if result.dry_run else "applied"
-    print(
-        f"fastly-sync: {verb} blocklist '{result.acl_name}': "
-        f"+{len(result.added)} / -{len(result.removed)}"
-    )
-    return 0
+    _guard(run)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Parse arguments and dispatch to the selected sub-command."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    try:
-        exit_code: int = args.func(args)
-    except FastlySyncError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return exit_code
+@waf_app.command("export")
+def waf_export(
+    acl_name: str = typer.Option(
+        DEFAULT_ACL_NAME, "--acl-name", help="name of the Edge ACL"
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="write to this file instead of stdout"
+    ),
+    token: str | None = _TOKEN_OPTION,
+    service_id: str | None = _SERVICE_OPTION,
+) -> None:
+    """Export the current Edge ACL entries to the text blocklist format."""
 
+    def run() -> None:
+        settings = load_settings(token, service_id)
+        with FastlyClient(settings.token, settings.service_id) as client:
+            entries = export_blocklist(client, acl_name)
+        text = dump_blocklist(entries)
+        if output is None:
+            typer.echo(text, nl=False)
+        else:
+            output.write_text(text, encoding="utf-8")
+            typer.echo(
+                f"fastly-sync: wrote {len(entries)} entry(ies) to {output}", err=True
+            )
 
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    _guard(run)
