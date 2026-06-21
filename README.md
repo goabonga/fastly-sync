@@ -113,7 +113,8 @@ path is **cached** (TTL 3600s), any path exposing a mutating method (POST, PUT,
         "action": "cache",
         "ttl": 3600,
         "stale_while_revalidate": 60,
-        "stale_if_error": 300
+        "stale_if_error": 300,
+        "description": "Public widgets API"
       }
     }
   }
@@ -122,7 +123,11 @@ path is **cached** (TTL 3600s), any path exposing a mutating method (POST, PUT,
 
 `action` is `cache` or `pass` (defaults to the method-derived value); `ttl`
 defaults to 3600s when caching; `stale_if_error` maps to Fastly's serve-stale
-window (`stale_ttl`).
+window (`stale_ttl`). `description` is an optional note — the Fastly
+`cache_settings` object has no comment field, so it is stored on the endpoint's
+**condition** `comment` and shown by `fastly-sync show cdn`. (Rate limiters have
+no comment field in the Fastly API, so they cannot carry a description; ACL
+entries do — use the blocklist's `# comment`.)
 
 Each cache setting is scoped to its path by a Fastly **request condition**
 built as a strict, anchored regex: each `{param}` becomes a single non-slash
