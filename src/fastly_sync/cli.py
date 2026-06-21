@@ -15,6 +15,7 @@ from .blocklist import dump_blocklist, load_blocklist
 from .config import load_settings
 from .errors import FastlySyncError
 from .fastly import FastlyClient
+from .models import SyncResult
 from .spec import build_desired_state, load_spec
 from .sync import Component, resolve_components, select_state, synchronize
 from .waf import (
@@ -48,6 +49,9 @@ _SERVICE_OPTION = typer.Option(
 _DRY_RUN_OPTION = typer.Option(
     False, "--dry-run", help="report the changes without applying them"
 )
+_NO_CONFIRM_OPTION = typer.Option(
+    False, "--no-confirm", help="apply without the interactive confirmation prompt"
+)
 
 
 def _guard(action: Callable[[], None]) -> None:
@@ -57,6 +61,24 @@ def _guard(action: Callable[[], None]) -> None:
     except FastlySyncError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
+
+
+def _confirmed(no_confirm: bool) -> bool:
+    """Return whether to proceed: ``--no-confirm`` or a positive prompt answer."""
+    if no_confirm or typer.confirm("Apply these changes?"):
+        return True
+    typer.echo("aborted, nothing applied")
+    return False
+
+
+def _echo_sync_plan(plan: SyncResult) -> None:
+    typer.echo(
+        f"fastly-sync plan: {len(plan.applied)} to apply, {len(plan.removed)} to prune"
+    )
+    for action in plan.applied:
+        typer.echo(f"  ~ [{action.kind}] {action.name} ({action.detail})")
+    for action in plan.removed:
+        typer.echo(f"  - [{action.kind}] {action.name} ({action.detail})")
 
 
 def _version_callback(value: bool) -> None:
@@ -94,6 +116,7 @@ def sync(
         "--prune/--no-prune",
         help="delete managed objects no longer in the spec (default: on)",
     ),
+    no_confirm: bool = _NO_CONFIRM_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
@@ -109,19 +132,22 @@ def sync(
             build_desired_state(load_spec(openapi)), only=only, skip=skip
         )
         with FastlyClient(settings.token, settings.service_id) as client:
-            result = synchronize(
-                state, client, components=components, prune=prune, dry_run=dry_run
+            plan = synchronize(
+                state, client, components=components, prune=prune, dry_run=True
             )
-        verb = "would apply" if result.dry_run else "applied"
-        pruned = "would prune" if result.dry_run else "pruned"
-        typer.echo(
-            f"fastly-sync: {verb} {len(result.applied)} change(s), "
-            f"{pruned} {len(result.removed)} orphan(s)"
-        )
-        for action in result.applied:
-            typer.echo(f"  [{action.kind}] {action.name} ({action.detail})")
-        for action in result.removed:
-            typer.echo(f"  - [{action.kind}] {action.name} ({action.detail})")
+            _echo_sync_plan(plan)
+            if dry_run:
+                typer.echo("(dry run — nothing applied)")
+                return
+            if not _confirmed(no_confirm):
+                return
+            result = synchronize(
+                state, client, components=components, prune=prune, dry_run=False
+            )
+            typer.echo(
+                f"fastly-sync: applied {len(result.applied)} change(s), "
+                f"pruned {len(result.removed)} orphan(s)"
+            )
 
     _guard(run)
 
@@ -140,6 +166,7 @@ def waf_sync(
     bootstrap: bool = typer.Option(
         False, "--bootstrap", help="create the ACL and VCL snippet before syncing"
     ),
+    no_confirm: bool = _NO_CONFIRM_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
@@ -151,13 +178,34 @@ def waf_sync(
         entries = load_blocklist(blocklist)
         with FastlyClient(settings.token, settings.service_id) as client:
             if bootstrap:
+                # The ACL does not exist yet, so a diff is not possible; the
+                # plan is simply "create the ACL and load every entry".
+                typer.echo(
+                    f"fastly-sync plan: bootstrap ACL '{acl_name}' and load "
+                    f"{len(entries)} entry(ies)"
+                )
+                if dry_run:
+                    typer.echo("(dry run — nothing applied)")
+                    return
+                if not _confirmed(no_confirm):
+                    return
                 bootstrap_acl(client, acl_name)
-            result = synchronize_blocklist(entries, client, acl_name, dry_run=dry_run)
-        verb = "would apply" if result.dry_run else "applied"
-        typer.echo(
-            f"fastly-sync: {verb} blocklist '{result.acl_name}': "
-            f"+{len(result.added)} / -{len(result.removed)}"
-        )
+            else:
+                plan = synchronize_blocklist(entries, client, acl_name, dry_run=True)
+                typer.echo(
+                    f"fastly-sync plan: ACL '{acl_name}' "
+                    f"+{len(plan.added)} / -{len(plan.removed)}"
+                )
+                if dry_run:
+                    typer.echo("(dry run — nothing applied)")
+                    return
+                if not _confirmed(no_confirm):
+                    return
+            result = synchronize_blocklist(entries, client, acl_name, dry_run=False)
+            typer.echo(
+                f"fastly-sync: applied blocklist '{result.acl_name}': "
+                f"+{len(result.added)} / -{len(result.removed)}"
+            )
 
     _guard(run)
 

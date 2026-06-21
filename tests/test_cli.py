@@ -100,12 +100,33 @@ def test_sync_dry_run(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 0
-    assert "would apply 2 change(s)" in result.output
+    assert "fastly-sync plan: 2 to apply, 0 to prune" in result.output
     assert "[cdn] /widgets" in result.output
     assert "[ratelimiter] widgets" in result.output
+    assert "(dry run" in result.output
 
 
-def test_sync_apply(tmp_path, monkeypatch):
+def test_sync_apply_no_confirm(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_sync_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+            "--no-confirm",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "fastly-sync plan: 2 to apply" in result.output
+    assert "applied 2 change(s)" in result.output
+
+
+def test_sync_apply_confirm_yes(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "FastlyClient", _factory(_sync_handler))
     result = runner.invoke(
         cli.app,
@@ -118,9 +139,30 @@ def test_sync_apply(tmp_path, monkeypatch):
             "--service-id",
             "s",
         ],
+        input="y\n",
     )
     assert result.exit_code == 0
     assert "applied 2 change(s)" in result.output
+
+
+def test_sync_apply_confirm_abort(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_sync_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 0
+    assert "aborted, nothing applied" in result.output
+    assert "applied 2 change(s)" not in result.output
 
 
 def test_sync_only_cdn(tmp_path, monkeypatch):
@@ -141,7 +183,7 @@ def test_sync_only_cdn(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 0
-    assert "would apply 1 change(s)" in result.output
+    assert "fastly-sync plan: 1 to apply" in result.output
     assert "[cdn] /widgets" in result.output
     assert "ratelimiter" not in result.output
 
@@ -193,6 +235,7 @@ def test_sync_prunes_orphans(tmp_path, monkeypatch):
             "t",
             "--service-id",
             "s",
+            "--no-confirm",
         ],
     )
     assert result.exit_code == 0
@@ -213,6 +256,7 @@ def test_sync_no_prune(tmp_path, monkeypatch):
             "--service-id",
             "s",
             "--no-prune",
+            "--no-confirm",
         ],
     )
     assert result.exit_code == 0
@@ -256,7 +300,92 @@ def test_waf_sync_dry_run(tmp_path, monkeypatch):
     )
     assert result.exit_code == 0
     # Two desired IPs added, the existing 192.0.2.1 not in the file -> removed.
-    assert "would apply blocklist 'waf_blocklist': +2 / -1" in result.output
+    assert "fastly-sync plan: ACL 'waf_blocklist' +2 / -1" in result.output
+    assert "(dry run" in result.output
+
+
+def test_waf_sync_apply_no_confirm(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_waf_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "waf",
+            "sync",
+            "--blocklist",
+            _write_blocklist(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+            "--no-confirm",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "fastly-sync plan: ACL 'waf_blocklist' +2 / -1" in result.output
+    assert "applied blocklist 'waf_blocklist': +2 / -1" in result.output
+
+
+def test_waf_sync_apply_abort(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_waf_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "waf",
+            "sync",
+            "--blocklist",
+            _write_blocklist(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 0
+    assert "aborted, nothing applied" in result.output
+
+
+def test_waf_sync_bootstrap_dry_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_waf_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "waf",
+            "sync",
+            "--blocklist",
+            _write_blocklist(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+            "--bootstrap",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "plan: bootstrap ACL 'waf_blocklist' and load 2 entry(ies)" in result.output
+    assert "(dry run" in result.output
+
+
+def test_waf_sync_bootstrap_abort(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_waf_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "waf",
+            "sync",
+            "--blocklist",
+            _write_blocklist(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+            "--bootstrap",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 0
+    assert "aborted, nothing applied" in result.output
 
 
 def test_waf_sync_bootstrap_and_apply(tmp_path, monkeypatch):
@@ -273,9 +402,11 @@ def test_waf_sync_bootstrap_and_apply(tmp_path, monkeypatch):
             "--service-id",
             "s",
             "--bootstrap",
+            "--no-confirm",
         ],
     )
     assert result.exit_code == 0
+    assert "plan: bootstrap ACL 'waf_blocklist'" in result.output
     assert "applied blocklist 'waf_blocklist': +2 / -1" in result.output
 
 
