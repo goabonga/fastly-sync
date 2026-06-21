@@ -44,7 +44,35 @@ fastly-sync sync --openapi ./openapi.json --dry-run
 # Apply: clones the active version, configures cache settings and rate
 # limiters, then activates the new version.
 fastly-sync sync --openapi https://api.example.com/openapi.json
+
+# WAF IP blacklisting: reconcile an Edge ACL from a text blocklist.
+fastly-sync waf --blocklist ./blocklist.txt --bootstrap   # one-time ACL + VCL
+fastly-sync waf --blocklist https://feeds.example.com/bad-ips.txt --dry-run
+fastly-sync waf --blocklist ./blocklist.txt               # ongoing sync
 ```
+
+### WAF IP blacklisting
+
+`fastly-sync waf` reconciles a Fastly **Edge ACL** from a text blocklist (one
+IP or CIDR per line, `#` for comments), local or remote. Entries are validated
+with Python's `ipaddress`, so IPv4, IPv6 and subnets all work:
+
+```
+# blocklist.txt
+203.0.113.0/24      # botnet C2
+198.51.100.7
+2001:db8::/32
+```
+
+The reconciliation is a diff: missing IPs are **added** and stale ones
+**removed** (`--dry-run` reports without applying). Because ACL *entries* are
+mutable outside service versioning, ongoing syncs are fast and need no version
+bump.
+
+Run once with `--bootstrap` to create the ACL and an enforcing `vcl_recv`
+snippet (`if (client.ip ~ waf_blocklist) { error 403 "Forbidden"; }`) on a new
+activated version; subsequent runs only touch the ACL entries. Use
+`--acl-name` to target a differently named ACL (default `waf_blocklist`).
 
 ### OpenAPI CDN cache extension
 

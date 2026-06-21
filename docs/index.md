@@ -18,6 +18,10 @@ export FASTLY_SERVICE_ID=...
 
 fastly-sync sync --openapi ./openapi.json --dry-run
 fastly-sync sync --openapi https://api.example.com/openapi.json
+
+# WAF IP blacklisting from a text blocklist (one IP/CIDR per line):
+fastly-sync waf --blocklist ./blocklist.txt --bootstrap
+fastly-sync waf --blocklist ./blocklist.txt --dry-run
 ```
 
 Each path in the spec becomes a CDN cache setting: GET/HEAD-only paths are
