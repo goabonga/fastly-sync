@@ -72,6 +72,12 @@ path is **cached** (TTL 3600s), any path exposing a mutating method (POST, PUT,
 defaults to 3600s when caching; `stale_if_error` maps to Fastly's serve-stale
 window (`stale_ttl`).
 
+Each cache setting is scoped to its path by a Fastly **request condition**
+(`req.url ~ "^/static-prefix"`, where the prefix stops at the first path
+parameter). When `stale_while_revalidate` (or `stale_if_error`) is set on a
+cached path, a `Surrogate-Control` response header carrying those directives is
+emitted and scoped to the same condition.
+
 ### OpenAPI rate limiter extension
 
 A path opts into a rate limiter with the `x-fastly-ratelimit` extension:
