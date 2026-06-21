@@ -10,10 +10,20 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class CdnEndpoint:
-    """A path served through the CDN, with the HTTP methods it exposes."""
+    """A path served through the CDN, with its derived cache policy.
+
+    ``action`` is either ``"cache"`` or ``"pass"``. ``ttl`` is the cache
+    lifetime in seconds (ignored when ``action`` is ``"pass"``);
+    ``stale_while_revalidate`` and ``stale_if_error`` are the serve-stale
+    windows in seconds.
+    """
 
     path: str
     methods: tuple[str, ...]
+    action: str = "pass"
+    ttl: int = 0
+    stale_while_revalidate: int = 0
+    stale_if_error: int = 0
 
 
 @dataclass(frozen=True)

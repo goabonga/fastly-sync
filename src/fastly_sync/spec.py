@@ -28,6 +28,10 @@ _HTTP_METHODS = {
 }
 _RATELIMIT_KEY = "x-fastly-ratelimit"
 _DEFAULT_WINDOW = 60
+_CACHE_KEY = "x-fastly-cache"
+_CACHE_ACTIONS = {"cache", "pass"}
+_CACHEABLE_METHODS = {"GET", "HEAD"}
+_DEFAULT_TTL = 3600
 
 
 def load_spec(source: str, *, client: httpx.Client | None = None) -> dict[str, Any]:
@@ -92,7 +96,7 @@ def build_desired_state(spec: dict[str, Any]) -> DesiredState:
             method.upper() for method in item if method.lower() in _HTTP_METHODS
         )
         if methods:
-            endpoints.append(CdnEndpoint(path=path, methods=methods))
+            endpoints.append(_cache_for(path, item, methods))
         rule = _rate_limit_for(path, item)
         if rule is not None:
             rate_limiters.append(rule)
@@ -100,6 +104,48 @@ def build_desired_state(spec: dict[str, Any]) -> DesiredState:
     return DesiredState(
         endpoints=tuple(endpoints),
         rate_limiters=tuple(rate_limiters),
+    )
+
+
+def _cache_for(
+    path: str, item: dict[str, Any], methods: tuple[str, ...]
+) -> CdnEndpoint:
+    # Idempotent read-only endpoints are cacheable by default; any mutating
+    # method forces a pass. An explicit x-fastly-cache extension overrides.
+    cacheable = all(method in _CACHEABLE_METHODS for method in methods)
+    default_action = "cache" if cacheable else "pass"
+
+    extension = item.get(_CACHE_KEY)
+    if extension is None:
+        return CdnEndpoint(
+            path=path,
+            methods=methods,
+            action=default_action,
+            ttl=_DEFAULT_TTL if default_action == "cache" else 0,
+        )
+    if not isinstance(extension, dict):
+        raise SpecError(f"invalid {_CACHE_KEY} for '{path}': expected an object")
+
+    action = str(extension.get("action", default_action))
+    if action not in _CACHE_ACTIONS:
+        raise SpecError(
+            f"invalid {_CACHE_KEY} action '{action}' for '{path}': "
+            f"expected one of {sorted(_CACHE_ACTIONS)}"
+        )
+    try:
+        ttl = int(extension.get("ttl", _DEFAULT_TTL if action == "cache" else 0))
+        stale_while_revalidate = int(extension.get("stale_while_revalidate", 0))
+        stale_if_error = int(extension.get("stale_if_error", 0))
+    except (TypeError, ValueError) as exc:
+        raise SpecError(f"invalid {_CACHE_KEY} for '{path}': {exc}") from exc
+
+    return CdnEndpoint(
+        path=path,
+        methods=methods,
+        action=action,
+        ttl=ttl,
+        stale_while_revalidate=stale_while_revalidate,
+        stale_if_error=stale_if_error,
     )
 
 

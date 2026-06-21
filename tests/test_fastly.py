@@ -51,7 +51,9 @@ def test_mutating_calls_issue_requests():
         return httpx.Response(200, json={})
 
     client, _ = make_client(handler)
-    client.upsert_cache_setting(7, CdnEndpoint(path="/w", methods=("GET",)))
+    client.upsert_cache_setting(
+        7, CdnEndpoint(path="/w", methods=("GET",), action="cache", ttl=60)
+    )
     client.upsert_rate_limiter(7, RateLimiterRule("w", "/w", 100, 60))
     client.activate_version(7)
     assert ("PUT", "/service/svc/version/7/cache_settings//w") in seen

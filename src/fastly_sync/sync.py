@@ -28,13 +28,8 @@ def synchronize(
     for endpoint in state.endpoints:
         if not dry_run:
             client.upsert_cache_setting(target, endpoint)
-        result.applied.append(
-            SyncAction(
-                kind="cdn",
-                name=endpoint.path,
-                detail=f"{len(endpoint.methods)} method(s)",
-            )
-        )
+        detail = f"cache, ttl={endpoint.ttl}s" if endpoint.action == "cache" else "pass"
+        result.applied.append(SyncAction(kind="cdn", name=endpoint.path, detail=detail))
 
     for rule in state.rate_limiters:
         if not dry_run:

@@ -80,15 +80,70 @@ def test_load_remote_creates_and_closes_own_client(monkeypatch):
 
 def test_build_desired_state():
     state = build_desired_state(SAMPLE)
-    paths = {endpoint.path: endpoint.methods for endpoint in state.endpoints}
-    assert paths["/widgets"] == ("GET", "POST")
-    assert paths["/health"] == ("GET",)
-    assert "/legacy" not in paths
+    endpoints = {endpoint.path: endpoint for endpoint in state.endpoints}
+    assert endpoints["/widgets"].methods == ("GET", "POST")
+    assert endpoints["/health"].methods == ("GET",)
+    assert "/legacy" not in endpoints
+    # /widgets exposes POST -> not cacheable -> pass; /health is GET-only.
+    assert endpoints["/widgets"].action == "pass"
+    assert endpoints["/widgets"].ttl == 0
+    assert endpoints["/health"].action == "cache"
+    assert endpoints["/health"].ttl == 3600
     assert len(state.rate_limiters) == 1
     rule = state.rate_limiters[0]
     assert rule.name == "widgets"
     assert rule.limit == 100
     assert rule.window == 30
+
+
+def test_cache_extension_overrides_defaults():
+    state = build_desired_state(
+        {
+            "paths": {
+                "/w": {
+                    "get": {},
+                    "x-fastly-cache": {
+                        "ttl": 120,
+                        "stale_while_revalidate": 30,
+                        "stale_if_error": 90,
+                    },
+                }
+            }
+        }
+    )
+    endpoint = state.endpoints[0]
+    assert endpoint.action == "cache"
+    assert endpoint.ttl == 120
+    assert endpoint.stale_while_revalidate == 30
+    assert endpoint.stale_if_error == 90
+
+
+def test_cache_extension_can_force_pass_on_read_endpoint():
+    state = build_desired_state(
+        {"paths": {"/w": {"get": {}, "x-fastly-cache": {"action": "pass"}}}}
+    )
+    endpoint = state.endpoints[0]
+    assert endpoint.action == "pass"
+    assert endpoint.ttl == 0
+
+
+def test_invalid_cache_action_raises():
+    with pytest.raises(SpecError, match="x-fastly-cache action"):
+        build_desired_state(
+            {"paths": {"/w": {"get": {}, "x-fastly-cache": {"action": "nope"}}}}
+        )
+
+
+def test_invalid_cache_ttl_raises():
+    with pytest.raises(SpecError, match="x-fastly-cache"):
+        build_desired_state(
+            {"paths": {"/w": {"get": {}, "x-fastly-cache": {"ttl": "soon"}}}}
+        )
+
+
+def test_non_dict_cache_extension_raises():
+    with pytest.raises(SpecError, match="expected an object"):
+        build_desired_state({"paths": {"/w": {"get": {}, "x-fastly-cache": 5}}})
 
 
 def test_build_desired_state_requires_paths():

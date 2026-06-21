@@ -80,11 +80,21 @@ class FastlyClient:
         return int(response.json()["number"])
 
     def upsert_cache_setting(self, version: int, endpoint: CdnEndpoint) -> None:
-        """Create or update the cache setting backing a CDN endpoint."""
+        """Create or update the cache setting backing a CDN endpoint.
+
+        ``stale_if_error`` maps to Fastly's ``stale_ttl`` (serve-stale window);
+        ``stale_while_revalidate`` is carried on the model for reporting but is
+        not a native ``cache_settings`` field.
+        """
         self._request(
             "PUT",
             f"/service/{self._service_id}/version/{version}/cache_settings/{endpoint.path}",
-            data={"name": endpoint.path, "action": "cache"},
+            data={
+                "name": endpoint.path,
+                "action": endpoint.action,
+                "ttl": endpoint.ttl,
+                "stale_ttl": endpoint.stale_if_error,
+            },
         )
 
     def upsert_rate_limiter(self, version: int, rule: RateLimiterRule) -> None:

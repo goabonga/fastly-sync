@@ -5,7 +5,10 @@ from fastly_sync.models import CdnEndpoint, DesiredState, RateLimiterRule
 from fastly_sync.sync import synchronize
 
 STATE = DesiredState(
-    endpoints=(CdnEndpoint(path="/w", methods=("GET", "POST")),),
+    endpoints=(
+        CdnEndpoint(path="/w", methods=("GET",), action="cache", ttl=3600),
+        CdnEndpoint(path="/w", methods=("GET", "POST"), action="pass"),
+    ),
     rate_limiters=(RateLimiterRule(name="w", path="/w", limit=100, window=60),),
 )
 
@@ -36,9 +39,9 @@ def test_apply_clones_mutates_and_activates():
     client = RecordingClient()
     result = synchronize(STATE, client)
     assert result.dry_run is False
-    assert len(result.applied) == 2
-    kinds = {action.kind for action in result.applied}
-    assert kinds == {"cdn", "ratelimiter"}
+    assert len(result.applied) == 3
+    cdn_details = [a.detail for a in result.applied if a.kind == "cdn"]
+    assert cdn_details == ["cache, ttl=3600s", "pass"]
     assert ("clone_version", 1) in client.calls
     assert ("upsert_cache_setting", 2, "/w") in client.calls
     assert ("upsert_rate_limiter", 2, "w") in client.calls
@@ -49,5 +52,5 @@ def test_dry_run_makes_no_mutating_calls():
     client = RecordingClient()
     result = synchronize(STATE, client, dry_run=True)
     assert result.dry_run is True
-    assert len(result.applied) == 2
+    assert len(result.applied) == 3
     assert client.calls == [("get_active_version",)]
