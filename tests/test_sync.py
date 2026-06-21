@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Chris <goabonga@pm.me>
 
 from fastly_sync.models import CdnEndpoint, DesiredState, RateLimiterRule
-from fastly_sync.sync import synchronize
+from fastly_sync.sync import Component, select_state, synchronize
 
 STATE = DesiredState(
     endpoints=(
@@ -80,6 +80,35 @@ def test_serve_stale_header_emitted_for_stale_cache():
     client = RecordingClient()
     synchronize(state, client)
     assert ("upsert_serve_stale_header", 2, "/w") in client.calls
+
+
+def test_select_state_default_keeps_everything():
+    selected = select_state(STATE)
+    assert selected == STATE
+
+
+def test_select_state_only_cdn():
+    selected = select_state(STATE, only=Component.CDN)
+    assert selected.endpoints == STATE.endpoints
+    assert selected.rate_limiters == ()
+
+
+def test_select_state_only_ratelimit():
+    selected = select_state(STATE, only=Component.RATELIMIT)
+    assert selected.endpoints == ()
+    assert selected.rate_limiters == STATE.rate_limiters
+
+
+def test_select_state_skip_cdn():
+    selected = select_state(STATE, skip=Component.CDN)
+    assert selected.endpoints == ()
+    assert selected.rate_limiters == STATE.rate_limiters
+
+
+def test_select_state_skip_ratelimit():
+    selected = select_state(STATE, skip=Component.RATELIMIT)
+    assert selected.endpoints == STATE.endpoints
+    assert selected.rate_limiters == ()
 
 
 def test_dry_run_makes_no_mutating_calls():

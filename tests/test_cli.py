@@ -119,6 +119,60 @@ def test_sync_apply(tmp_path, monkeypatch):
     assert "applied 2 change(s)" in result.output
 
 
+def test_sync_only_cdn(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_sync_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+            "--dry-run",
+            "--only",
+            "cdn",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "would apply 1 change(s)" in result.output
+    assert "[cdn] /widgets" in result.output
+    assert "ratelimiter" not in result.output
+
+
+def test_sync_skip_cdn(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_sync_handler))
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--token",
+            "t",
+            "--service-id",
+            "s",
+            "--dry-run",
+            "--skip",
+            "cdn",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "[cdn]" not in result.output
+    assert "[ratelimiter] widgets" in result.output
+
+
+def test_sync_only_and_skip_conflict(tmp_path):
+    result = runner.invoke(
+        cli.app,
+        ["sync", "--openapi", _write_spec(tmp_path), "--only", "cdn", "--skip", "cdn"],
+    )
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
 def test_sync_reports_errors(monkeypatch):
     def boom(*args, **kwargs):
         raise ConfigError("missing required configuration: FASTLY_API_TOKEN")

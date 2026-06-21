@@ -16,7 +16,7 @@ from .config import load_settings
 from .errors import FastlySyncError
 from .fastly import FastlyClient
 from .spec import build_desired_state, load_spec
-from .sync import synchronize
+from .sync import Component, select_state, synchronize
 from .waf import (
     DEFAULT_ACL_NAME,
     bootstrap_acl,
@@ -83,15 +83,25 @@ def sync(
     openapi: str = typer.Option(
         ..., "--openapi", metavar="PATH_OR_URL", help="path or URL to openapi.json"
     ),
+    only: Component | None = typer.Option(
+        None, "--only", help="apply only this component (cdn or ratelimit)"
+    ),
+    skip: Component | None = typer.Option(
+        None, "--skip", help="apply everything except this component"
+    ),
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
 ) -> None:
     """Synchronise CDN cache and rate limiters from an OpenAPI document."""
+    if only is not None and skip is not None:
+        raise typer.BadParameter("--only and --skip are mutually exclusive")
 
     def run() -> None:
         settings = load_settings(token, service_id)
-        state = build_desired_state(load_spec(openapi))
+        state = select_state(
+            build_desired_state(load_spec(openapi)), only=only, skip=skip
+        )
         with FastlyClient(settings.token, settings.service_id) as client:
             result = synchronize(state, client, dry_run=dry_run)
         verb = "would apply" if result.dry_run else "applied"
