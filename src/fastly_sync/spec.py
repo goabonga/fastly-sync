@@ -115,9 +115,8 @@ def _cache_for(
     # method forces a pass. An explicit x-fastly-cache extension overrides.
     cacheable = all(method in _CACHEABLE_METHODS for method in methods)
     default_action = "cache" if cacheable else "pass"
-    slug = _slug(path)
-    condition_name = f"cache-{slug}"
-    match_statement = f'req.url ~ "^{re.escape(_static_prefix(path))}"'
+    condition_name = f"cache-{_slug(path)}"
+    match_statement = _match_statement(path)
 
     extension = item.get(_CACHE_KEY)
     if extension is None:
@@ -175,8 +174,24 @@ def _slug(path: str) -> str:
     return cleaned or "root"
 
 
-def _static_prefix(path: str) -> str:
-    # Match on the literal portion before the first path parameter, so
-    # "/widgets/{id}" scopes to "^/widgets/" rather than the literal "{id}".
-    prefix = path.split("{", 1)[0]
-    return prefix or "/"
+_PARAM_RE = re.compile(r"\{[^/}]+\}")
+
+
+def _path_regex(path: str) -> str:
+    # Build a strict regex: literal segments are escaped, each {param} becomes
+    # a single non-slash segment. So "/widgets/{id}" -> "/widgets/[^/]+", which
+    # cannot overlap a sibling like "/widget".
+    parts: list[str] = []
+    last = 0
+    for match in _PARAM_RE.finditer(path):
+        parts.append(re.escape(path[last : match.start()]))
+        parts.append(r"[^/]+")
+        last = match.end()
+    parts.append(re.escape(path[last:]))
+    return "".join(parts)
+
+
+def _match_statement(path: str) -> str:
+    # Anchor both ends: "^<regex>" and "(?:\?|$)" so the match stops at the end
+    # of the path or the start of the query string, never on a longer sibling.
+    return 'req.url ~ "^' + _path_regex(path) + r'(?:\?|$)"'

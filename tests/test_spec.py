@@ -125,9 +125,19 @@ def test_endpoint_derives_request_condition():
     by_path = {endpoint.path: endpoint for endpoint in state.endpoints}
     widgets = by_path["/widgets/{id}"]
     assert widgets.condition_name == "cache-widgets-id"
-    # The condition matches the static prefix, not the literal "{id}".
-    assert widgets.match_statement == 'req.url ~ "^/widgets/"'
-    assert by_path["/health"].match_statement == 'req.url ~ "^/health"'
+    # Path parameter becomes a single non-slash segment, both ends anchored.
+    assert widgets.match_statement == r'req.url ~ "^/widgets/[^/]+(?:\?|$)"'
+    assert by_path["/health"].match_statement == r'req.url ~ "^/health(?:\?|$)"'
+
+
+def test_sibling_paths_do_not_overlap():
+    state = build_desired_state(
+        {"paths": {"/widget": {"get": {}}, "/widgets": {"get": {}}}}
+    )
+    statements = {e.path: e.match_statement for e in state.endpoints}
+    # "^/widget(?:\?|$)" must not match "/widgets" — the end anchor prevents it.
+    assert statements["/widget"] == r'req.url ~ "^/widget(?:\?|$)"'
+    assert statements["/widgets"] == r'req.url ~ "^/widgets(?:\?|$)"'
 
 
 def test_cache_extension_can_force_pass_on_read_endpoint():
