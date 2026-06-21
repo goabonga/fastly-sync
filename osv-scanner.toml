@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# OSV-Scanner ignore list (auto-discovered next to uv.lock). Only for
+# advisories that cannot be acted on yet: each entry carries a justification
+# and an `ignoreUntil` review date so the suppression is revisited. Bump the
+# lock to clear fixable advisories instead of ignoring them.
+
+# [[IgnoredVulns]]
+# id = "PYSEC-XXXX-NN"            # CVE-.... / GHSA-....
+# ignoreUntil = 2026-08-24
+# # Why it is safe to ignore (no upstream fix / unreachable code path / dev-only
+# # transitive dep / constrained by an upstream pin). Drop once fixed.
+# reason = "..."
