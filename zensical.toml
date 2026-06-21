@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# Zensical site config. Built with `uv run zensical build --clean` and
+# deployed to GitHub Pages by the `docs` CI job.
+
+[project]
+site_name = "fastly-sync"
+site_description = "Synchronise Fastly CDN and rate limiter configuration from an OpenAPI spec."
+site_author = "Chris"
+site_url = "https://goabonga.github.io/fastly-sync/"
+repo_url = "https://github.com/goabonga/fastly-sync"
+repo_name = "goabonga/fastly-sync"
+
+# Navigation tree for the published site (files live under docs/).
+nav = [
+    { "Introduction" = "index.md" },
+    { "Stability & deprecation" = "stability.md" },
+]
