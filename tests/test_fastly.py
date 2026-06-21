@@ -47,18 +47,32 @@ def test_mutating_calls_issue_requests():
     seen = []
 
     def handler(request):
-        seen.append((request.method, request.url.path))
+        seen.append((request.method, request.url.path, request.content.decode()))
         return httpx.Response(200, json={})
 
     client, _ = make_client(handler)
-    client.upsert_cache_setting(
-        7, CdnEndpoint(path="/w", methods=("GET",), action="cache", ttl=60)
+    endpoint = CdnEndpoint(
+        path="/w",
+        methods=("GET",),
+        action="cache",
+        ttl=60,
+        condition_name="cache-w",
+        match_statement='req.url ~ "^/w"',
     )
+    client.upsert_condition(7, endpoint)
+    client.upsert_cache_setting(7, endpoint)
     client.upsert_rate_limiter(7, RateLimiterRule("w", "/w", 100, 60))
     client.activate_version(7)
-    assert ("PUT", "/service/svc/version/7/cache_settings//w") in seen
-    assert ("PUT", "/service/svc/version/7/rate-limiters/w") in seen
-    assert ("PUT", "/service/svc/version/7/activate") in seen
+
+    methods_paths = {(method, path) for method, path, _ in seen}
+    assert ("PUT", "/service/svc/version/7/condition/cache-w") in methods_paths
+    assert ("PUT", "/service/svc/version/7/cache_settings//w") in methods_paths
+    assert ("PUT", "/service/svc/version/7/rate-limiters/w") in methods_paths
+    assert ("PUT", "/service/svc/version/7/activate") in methods_paths
+    cache_body = next(
+        body for _, path, body in seen if path.endswith("/cache_settings//w")
+    )
+    assert "cache_condition=cache-w" in cache_body
 
 
 def test_request_wraps_http_errors():

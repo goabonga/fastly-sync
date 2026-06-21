@@ -15,7 +15,8 @@ class CdnEndpoint:
     ``action`` is either ``"cache"`` or ``"pass"``. ``ttl`` is the cache
     lifetime in seconds (ignored when ``action`` is ``"pass"``);
     ``stale_while_revalidate`` and ``stale_if_error`` are the serve-stale
-    windows in seconds.
+    windows in seconds. ``condition_name`` / ``match_statement`` scope the
+    cache setting to this path via a Fastly request condition.
     """
 
     path: str
@@ -24,6 +25,8 @@ class CdnEndpoint:
     ttl: int = 0
     stale_while_revalidate: int = 0
     stale_if_error: int = 0
+    condition_name: str = ""
+    match_statement: str = ""
 
 
 @dataclass(frozen=True)

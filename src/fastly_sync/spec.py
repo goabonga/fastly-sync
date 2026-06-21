@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -114,6 +115,9 @@ def _cache_for(
     # method forces a pass. An explicit x-fastly-cache extension overrides.
     cacheable = all(method in _CACHEABLE_METHODS for method in methods)
     default_action = "cache" if cacheable else "pass"
+    slug = _slug(path)
+    condition_name = f"cache-{slug}"
+    match_statement = f'req.url ~ "^{re.escape(_static_prefix(path))}"'
 
     extension = item.get(_CACHE_KEY)
     if extension is None:
@@ -122,6 +126,8 @@ def _cache_for(
             methods=methods,
             action=default_action,
             ttl=_DEFAULT_TTL if default_action == "cache" else 0,
+            condition_name=condition_name,
+            match_statement=match_statement,
         )
     if not isinstance(extension, dict):
         raise SpecError(f"invalid {_CACHE_KEY} for '{path}': expected an object")
@@ -146,6 +152,8 @@ def _cache_for(
         ttl=ttl,
         stale_while_revalidate=stale_while_revalidate,
         stale_if_error=stale_if_error,
+        condition_name=condition_name,
+        match_statement=match_statement,
     )
 
 
@@ -163,5 +171,12 @@ def _rate_limit_for(path: str, item: dict[str, Any]) -> RateLimiterRule | None:
 
 
 def _slug(path: str) -> str:
-    cleaned = "".join(char if char.isalnum() else "-" for char in path).strip("-")
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", path).strip("-")
     return cleaned or "root"
+
+
+def _static_prefix(path: str) -> str:
+    # Match on the literal portion before the first path parameter, so
+    # "/widgets/{id}" scopes to "^/widgets/" rather than the literal "{id}".
+    prefix = path.split("{", 1)[0]
+    return prefix or "/"

@@ -118,6 +118,18 @@ def test_cache_extension_overrides_defaults():
     assert endpoint.stale_if_error == 90
 
 
+def test_endpoint_derives_request_condition():
+    state = build_desired_state(
+        {"paths": {"/widgets/{id}": {"get": {}}, "/health": {"get": {}}}}
+    )
+    by_path = {endpoint.path: endpoint for endpoint in state.endpoints}
+    widgets = by_path["/widgets/{id}"]
+    assert widgets.condition_name == "cache-widgets-id"
+    # The condition matches the static prefix, not the literal "{id}".
+    assert widgets.match_statement == 'req.url ~ "^/widgets/"'
+    assert by_path["/health"].match_statement == 'req.url ~ "^/health"'
+
+
 def test_cache_extension_can_force_pass_on_read_endpoint():
     state = build_desired_state(
         {"paths": {"/w": {"get": {}, "x-fastly-cache": {"action": "pass"}}}}

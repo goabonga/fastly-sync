@@ -79,12 +79,26 @@ class FastlyClient:
         )
         return int(response.json()["number"])
 
+    def upsert_condition(self, version: int, endpoint: CdnEndpoint) -> None:
+        """Create or update the cache condition scoping an endpoint's path."""
+        self._request(
+            "PUT",
+            f"/service/{self._service_id}/version/{version}/condition/{endpoint.condition_name}",
+            data={
+                "name": endpoint.condition_name,
+                "statement": endpoint.match_statement,
+                "type": "CACHE",
+                "priority": 10,
+            },
+        )
+
     def upsert_cache_setting(self, version: int, endpoint: CdnEndpoint) -> None:
         """Create or update the cache setting backing a CDN endpoint.
 
-        ``stale_if_error`` maps to Fastly's ``stale_ttl`` (serve-stale window);
-        ``stale_while_revalidate`` is carried on the model for reporting but is
-        not a native ``cache_settings`` field.
+        The setting is scoped to the endpoint's path through its
+        ``cache_condition``. ``stale_if_error`` maps to Fastly's ``stale_ttl``
+        (serve-stale window); ``stale_while_revalidate`` is carried on the model
+        for reporting but is not a native ``cache_settings`` field.
         """
         self._request(
             "PUT",
@@ -94,6 +108,7 @@ class FastlyClient:
                 "action": endpoint.action,
                 "ttl": endpoint.ttl,
                 "stale_ttl": endpoint.stale_if_error,
+                "cache_condition": endpoint.condition_name,
             },
         )
 
