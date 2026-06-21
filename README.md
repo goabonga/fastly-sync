@@ -49,6 +49,10 @@ fastly-sync sync --openapi ./openapi.json --dry-run
 # limiters, then activates the new version.
 fastly-sync sync --openapi https://api.example.com/openapi.json
 
+# Apply a single component (one clone/activate either way):
+fastly-sync sync --openapi ./openapi.json --only cdn
+fastly-sync sync --openapi ./openapi.json --skip ratelimit
+
 # WAF IP blacklisting: reconcile an Edge ACL from a text blocklist.
 fastly-sync waf sync --blocklist ./blocklist.txt --bootstrap   # one-time ACL + VCL
 fastly-sync waf sync --blocklist https://feeds.example.com/bad-ips.txt --dry-run
