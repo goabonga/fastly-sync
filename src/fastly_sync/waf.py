@@ -87,6 +87,26 @@ def synchronize_blocklist(
     return result
 
 
+def export_blocklist(
+    client: FastlyClient, acl_name: str = DEFAULT_ACL_NAME
+) -> tuple[BlockEntry, ...]:
+    """Read the current ACL entries back into sorted :class:`BlockEntry` values.
+
+    Raises:
+        FastlyAPIError: if the ACL does not exist on the active version.
+    """
+    acl_id = client.get_acl_id(acl_name)
+    if acl_id is None:
+        raise FastlyAPIError(f"ACL '{acl_name}' not found on the active version")
+
+    entries = []
+    for raw in client.list_acl_entries(acl_id):
+        ip, subnet = _current_key(raw)
+        comment = str(raw.get("comment") or "")
+        entries.append(BlockEntry(ip=ip, subnet=subnet, comment=comment))
+    return tuple(sorted(entries, key=lambda entry: (entry.ip, entry.subnet or 0)))
+
+
 def _current_key(entry: dict[str, Any]) -> tuple[str, int | None]:
     subnet = entry.get("subnet")
     if subnet is None or subnet == "":

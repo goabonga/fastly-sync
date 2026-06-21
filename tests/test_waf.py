@@ -5,7 +5,7 @@ import pytest
 
 from fastly_sync.errors import FastlyAPIError
 from fastly_sync.models import BlockEntry
-from fastly_sync.waf import bootstrap_acl, synchronize_blocklist
+from fastly_sync.waf import bootstrap_acl, export_blocklist, synchronize_blocklist
 
 
 class FakeClient:
@@ -90,3 +90,23 @@ def test_missing_acl_raises():
     client = FakeClient(acl_id=None)
     with pytest.raises(FastlyAPIError, match="not found"):
         synchronize_blocklist([BlockEntry("10.0.0.1")], client)
+
+
+def test_export_reads_and_sorts_entries():
+    client = FakeClient(
+        current=[
+            {"id": "e2", "ip": "203.0.113.0", "subnet": "24", "comment": "botnet"},
+            {"id": "e1", "ip": "198.51.100.7", "subnet": None, "comment": ""},
+        ]
+    )
+    entries = export_blocklist(client, "waf_blocklist")
+    assert entries == (
+        BlockEntry("198.51.100.7", None, ""),
+        BlockEntry("203.0.113.0", 24, "botnet"),
+    )
+
+
+def test_export_missing_acl_raises():
+    client = FakeClient(acl_id=None)
+    with pytest.raises(FastlyAPIError, match="not found"):
+        export_blocklist(client)

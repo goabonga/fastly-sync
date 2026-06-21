@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Sequence
 
 import httpx
 
@@ -37,6 +38,19 @@ def load_blocklist(
         entry = _parse_entry(token, comment.strip(), source, lineno)
         entries[entry.key] = entry
     return tuple(sorted(entries.values(), key=lambda e: (e.ip, e.subnet or 0)))
+
+
+def dump_blocklist(entries: Sequence[BlockEntry]) -> str:
+    """Render block entries back to the text blocklist format.
+
+    The output round-trips through :func:`load_blocklist`: one ``ip`` or
+    ``ip/subnet`` per line, with an optional ``# comment`` suffix.
+    """
+    lines = []
+    for entry in entries:
+        cidr = entry.ip if entry.subnet is None else f"{entry.ip}/{entry.subnet}"
+        lines.append(f"{cidr}  # {entry.comment}" if entry.comment else cidr)
+    return "".join(f"{line}\n" for line in lines)
 
 
 def _parse_entry(token: str, comment: str, source: str, lineno: int) -> BlockEntry:
