@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Chris <goabonga@pm.me>
 
+import json
+
 import httpx
 import pytest
 
 from fastly_sync.errors import FastlyAPIError
 from fastly_sync.fastly import BASE_URL, FastlyClient
-from fastly_sync.models import CdnEndpoint, RateLimiterRule
+from fastly_sync.models import BlockEntry, CdnEndpoint, RateLimiterRule
 
 
 def make_client(handler):
@@ -98,6 +100,91 @@ def test_serve_stale_header_sets_surrogate_control():
     assert "stale-while-revalidate%3D30" in captured["body"]
     assert "stale-if-error%3D90" in captured["body"]
     assert "cache_condition=cache-w" in captured["body"]
+
+
+def test_create_acl_returns_id():
+    client, _ = make_client(lambda request: httpx.Response(200, json={"id": "ACL9"}))
+    assert client.create_acl(3, "waf_blocklist") == "ACL9"
+
+
+def test_get_acl_id_found_and_missing():
+    def handler(request):
+        if request.url.path.endswith("/version"):
+            return httpx.Response(200, json=[{"number": 4, "active": True}])
+        return httpx.Response(200, json=[{"name": "waf_blocklist", "id": "ACL9"}])
+
+    client, _ = make_client(handler)
+    assert client.get_acl_id("waf_blocklist") == "ACL9"
+    assert client.get_acl_id("absent") is None
+
+
+def test_upsert_vcl_snippet_posts_recv():
+    captured = {}
+
+    def handler(request):
+        captured["path"] = request.url.path
+        captured["body"] = request.content.decode()
+        return httpx.Response(200, json={})
+
+    client, _ = make_client(handler)
+    client.upsert_vcl_snippet(3, "waf-block", "if (client.ip ~ acl) { error 403; }")
+    assert captured["path"] == "/service/svc/version/3/snippet"
+    assert "type=recv" in captured["body"]
+
+
+def test_list_acl_entries_paginates():
+    page_one = [{"id": str(i), "ip": f"10.0.0.{i}", "subnet": None} for i in range(100)]
+
+    def handler(request):
+        page = request.url.params.get("page")
+        return httpx.Response(200, json=page_one if page == "1" else [{"id": "x"}])
+
+    client, _ = make_client(handler)
+    entries = client.list_acl_entries("ACL9")
+    assert len(entries) == 101
+
+
+def test_list_acl_entries_empty():
+    client, _ = make_client(lambda request: httpx.Response(200, json=[]))
+    assert client.list_acl_entries("ACL9") == []
+
+
+def test_update_acl_entries_batches_ops():
+    captured = {}
+
+    def handler(request):
+        captured["path"] = request.url.path
+        captured["body"] = request.content.decode()
+        return httpx.Response(200, json={})
+
+    client, _ = make_client(handler)
+    client.update_acl_entries(
+        "ACL9",
+        [BlockEntry("203.0.113.0", 24, "botnet"), BlockEntry("198.51.100.7")],
+        ["e1"],
+    )
+    assert captured["path"] == "/service/svc/acl/ACL9/entries"
+    ops = json.loads(captured["body"])["entries"]
+    assert {
+        "op": "create",
+        "ip": "203.0.113.0",
+        "comment": "botnet",
+        "subnet": 24,
+    } in ops
+    assert {"op": "create", "ip": "198.51.100.7", "comment": ""} in ops
+    assert {"op": "delete", "id": "e1"} in ops
+
+
+def test_update_acl_entries_noop_when_empty():
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json={})
+
+    client, _ = make_client(handler)
+    client.update_acl_entries("ACL9", [], [])
+    assert calls == []
 
 
 def test_request_wraps_http_errors():

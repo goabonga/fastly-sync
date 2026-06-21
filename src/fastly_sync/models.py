@@ -40,6 +40,25 @@ class RateLimiterRule:
 
 
 @dataclass(frozen=True)
+class BlockEntry:
+    """An IP or CIDR to blacklist in a Fastly Edge ACL.
+
+    ``subnet`` is the CIDR prefix length, or ``None`` for a single host. Two
+    entries are reconciled by their ``(ip, subnet)`` identity; ``comment`` is
+    metadata only.
+    """
+
+    ip: str
+    subnet: int | None = None
+    comment: str = ""
+
+    @property
+    def key(self) -> tuple[str, int | None]:
+        """Identity used to reconcile against existing ACL entries."""
+        return (self.ip, self.subnet)
+
+
+@dataclass(frozen=True)
 class DesiredState:
     """The full configuration derived from an OpenAPI spec."""
 

@@ -11,9 +11,10 @@ from typing import Any
 import httpx
 
 from .errors import FastlyAPIError
-from .models import CdnEndpoint, RateLimiterRule
+from .models import BlockEntry, CdnEndpoint, RateLimiterRule
 
 BASE_URL = "https://api.fastly.com"
+_ACL_PAGE_SIZE = 100
 
 
 class FastlyClient:
@@ -157,3 +158,84 @@ class FastlyClient:
     def activate_version(self, version: int) -> None:
         """Activate a service version, making its configuration live."""
         self._request("PUT", f"/service/{self._service_id}/version/{version}/activate")
+
+    # --- WAF / Edge ACL -------------------------------------------------
+
+    def create_acl(self, version: int, name: str) -> str:
+        """Create an Edge ACL on a draft version and return its id."""
+        response = self._request(
+            "POST",
+            f"/service/{self._service_id}/version/{version}/acl",
+            data={"name": name},
+        )
+        return str(response.json()["id"])
+
+    def get_acl_id(self, name: str) -> str | None:
+        """Return the id of the named ACL on the active version, or ``None``."""
+        version = self.get_active_version()
+        response = self._request(
+            "GET", f"/service/{self._service_id}/version/{version}/acl"
+        )
+        for acl in response.json():
+            if acl.get("name") == name:
+                return str(acl["id"])
+        return None
+
+    def upsert_vcl_snippet(self, version: int, name: str, content: str) -> None:
+        """Create a versioned ``vcl_recv`` snippet (used to enforce the ACL)."""
+        self._request(
+            "POST",
+            f"/service/{self._service_id}/version/{version}/snippet",
+            data={
+                "name": name,
+                "type": "recv",
+                "dynamic": 0,
+                "priority": 100,
+                "content": content,
+            },
+        )
+
+    def list_acl_entries(self, acl_id: str) -> list[dict[str, Any]]:
+        """Return every entry of an ACL, following pagination."""
+        entries: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            response = self._request(
+                "GET",
+                f"/service/{self._service_id}/acl/{acl_id}/entries",
+                params={"per_page": _ACL_PAGE_SIZE, "page": page},
+            )
+            batch = response.json()
+            if not batch:
+                break
+            entries.extend(batch)
+            if len(batch) < _ACL_PAGE_SIZE:
+                break
+            page += 1
+        return entries
+
+    def update_acl_entries(
+        self,
+        acl_id: str,
+        additions: list[BlockEntry],
+        removed_ids: list[str],
+    ) -> None:
+        """Apply additions and deletions to an ACL in a single batch."""
+        operations: list[dict[str, Any]] = []
+        for entry in additions:
+            op: dict[str, Any] = {
+                "op": "create",
+                "ip": entry.ip,
+                "comment": entry.comment,
+            }
+            if entry.subnet is not None:
+                op["subnet"] = entry.subnet
+            operations.append(op)
+        operations.extend({"op": "delete", "id": entry_id} for entry_id in removed_ids)
+        if not operations:
+            return
+        self._request(
+            "PATCH",
+            f"/service/{self._service_id}/acl/{acl_id}/entries",
+            json={"entries": operations},
+        )
