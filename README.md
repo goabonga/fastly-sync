@@ -58,12 +58,14 @@ fastly-sync sync waf --blocklist ./blocklist.txt --bootstrap   # one-time ACL + 
 fastly-sync sync waf --blocklist https://feeds.example.com/bad-ips.txt
 fastly-sync sync waf --blocklist ./blocklist.txt --dry-run
 
-# Show the live config applied on Fastly, per target (or `all`):
+# Show the live config applied on Fastly, per target (or `all`).
+# show cdn / rate-limiter / waf accept --output FILE to write instead of printing.
 fastly-sync show all
 fastly-sync show cdn
+fastly-sync show cdn --output cdn.txt          # same text, to a file
 fastly-sync show rate-limiter
-fastly-sync show waf                       # print the blocklist
-fastly-sync show waf --output blocklist.txt   # export the blocklist (round-trips)
+fastly-sync show waf                           # print the blocklist
+fastly-sync show waf --output blocklist.txt    # export the blocklist (round-trips)
 
 # Shell completion (Typer):
 fastly-sync --install-completion
