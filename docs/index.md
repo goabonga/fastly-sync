@@ -29,10 +29,12 @@ fastly-sync sync waf          --blocklist ./blocklist.txt
 fastly-sync sync waf --blocklist ./blocklist.txt --bootstrap
 fastly-sync sync waf --blocklist ./blocklist.txt --dry-run
 
-# Show the live config applied on Fastly, per target:
+# Show the live config (text/csv/terraform); sync can render the desired
+# config the same way, offline, without applying:
 fastly-sync show all
-fastly-sync show waf --output blocklist.txt          # export the blocklist
+fastly-sync show all --format csv
 fastly-sync show all --format terraform -o fastly.tf  # Fastly Terraform resources
+fastly-sync sync cdn --openapi ./openapi.json --format terraform -o cdn.tf
 ```
 
 `sync` is declarative: by default it also prunes managed objects no longer in

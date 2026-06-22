@@ -59,15 +59,17 @@ fastly-sync sync waf --blocklist https://feeds.example.com/bad-ips.txt
 fastly-sync sync waf --blocklist ./blocklist.txt --dry-run
 
 # Show the live config applied on Fastly, per target (or `all`).
-# Every show target accepts --output FILE and --format text|terraform.
+# Every show target accepts --output FILE and --format text|terraform|csv.
 fastly-sync show all
-fastly-sync show cdn
 fastly-sync show cdn --output cdn.txt           # same text, to a file
 fastly-sync show waf --output blocklist.txt     # export the blocklist (round-trips)
+fastly-sync show all --format csv               # CSV table
+fastly-sync show all --format terraform -o fastly.tf   # Fastly Terraform resources
 
-# Generate Fastly Terraform resources from the live config:
-fastly-sync show all --format terraform -o fastly.tf
-fastly-sync show waf --format terraform         # fastly_service_acl_entries
+# Generate Terraform/CSV from the OpenAPI spec itself, WITHOUT touching Fastly
+# (offline, no credentials needed — sync renders the desired config):
+fastly-sync sync cdn --openapi ./openapi.json --format terraform -o cdn.tf
+fastly-sync sync all --openapi ./openapi.json --blocklist ./blocklist.txt --format csv
 
 # Shell completion (Typer):
 fastly-sync --install-completion
@@ -175,17 +177,26 @@ confirmation. Use `--dry-run` to print the plan and stop, or `--no-confirm` to
 apply without prompting (CI). `show <target>` prints the live CDN, rate limiter
 and WAF configuration currently applied on Fastly.
 
-### Terraform export
+### Output formats (text / terraform / csv)
 
-`show <target> --format terraform` renders the live managed config as Fastly
-Terraform provider resources: a `fastly_service_vcl` with the `cache_setting`,
-`condition`, `rate_limiter` and `acl` blocks, plus a `fastly_service_acl_entries`
-resource for the WAF IPs.
+Both `show` and `sync` accept `--format text|terraform|csv` (with `--output
+FILE` / `-o`):
 
-It is a **scaffold**, not a turn-key `.tf`: `fastly_service_vcl` also requires
-`name`, `domain` and `backend` (which fastly-sync does not manage), so those are
-emitted as `TODO` placeholders. The `fastly_service_acl_entries` resource is
-complete. Serve-stale `header` blocks are not included.
+- **`show --format …`** renders the **live** config read from Fastly.
+- **`sync --format …`** renders the **desired** config derived from the OpenAPI
+  spec (and `--blocklist`) — **offline, no credentials, nothing applied**. Handy
+  to generate IaC or a CSV from your spec in CI.
+
+`terraform` emits Fastly provider resources: a `fastly_service_vcl` with the
+`cache_setting`, `condition`, `rate_limiter` and `acl` blocks, plus a
+`fastly_service_acl_entries` resource for the WAF IPs. It is a **scaffold**, not
+a turn-key `.tf`: `fastly_service_vcl` also requires `name`, `domain` and
+`backend` (which fastly-sync does not manage), so those are `TODO` placeholders;
+the `fastly_service_acl_entries` resource is complete; serve-stale `header`
+blocks are not included.
+
+`csv` emits one table per target (`show cdn`/`rate-limiter`/`waf`), or a generic
+`kind,name,detail` table for `all`.
 
 ## Getting started (development)
 
