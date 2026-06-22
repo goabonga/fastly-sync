@@ -22,6 +22,7 @@ class LiveConfig:
 
     version: int
     cache_settings: list[dict[str, Any]]
+    conditions: list[dict[str, Any]]
     rate_limiters: list[dict[str, Any]]
     blocklist: tuple[BlockEntry, ...]
 
@@ -33,11 +34,15 @@ def gather(client: FastlyClient, acl_name: str = DEFAULT_ACL_NAME) -> LiveConfig
     created config is ignored. The blocklist is empty when the ACL is absent.
     """
     version = client.get_active_version()
+    conditions = [
+        cond
+        for cond in client.list_conditions(version)
+        if str(cond.get("name", "")).startswith(_OWNED_CONDITION_PREFIX)
+    ]
     # The cache_settings object has no comment field, so descriptions live on
     # the matching condition's comment (see fastly.upsert_condition).
     comments = {
-        str(cond.get("name", "")): str(cond.get("comment", ""))
-        for cond in client.list_conditions(version)
+        str(cond.get("name", "")): str(cond.get("comment", "")) for cond in conditions
     }
     cache_settings = [
         {
@@ -58,6 +63,7 @@ def gather(client: FastlyClient, acl_name: str = DEFAULT_ACL_NAME) -> LiveConfig
     return LiveConfig(
         version=version,
         cache_settings=cache_settings,
+        conditions=conditions,
         rate_limiters=rate_limiters,
         blocklist=blocklist,
     )

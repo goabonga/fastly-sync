@@ -462,3 +462,41 @@ def test_show_waf_output_file(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert out.read_text(encoding="utf-8") == "198.51.100.7  # bad\n"
     assert "wrote 1 entry(ies)" in result.output
+
+
+def test_show_cdn_terraform(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(cli.app, ["show", "cdn", "--format", "terraform", *_creds()])
+    assert result.exit_code == 0
+    assert 'resource "fastly_service_vcl" "this"' in result.output
+    assert "cache_setting {" in result.output
+
+
+def test_show_rate_limiter_terraform(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(
+        cli.app, ["show", "rate-limiter", "--format", "terraform", *_creds()]
+    )
+    assert result.exit_code == 0
+    assert "rate_limiter {" in result.output
+
+
+def test_show_waf_terraform(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(cli.app, ["show", "waf", "--format", "terraform", *_creds()])
+    assert result.exit_code == 0
+    assert 'resource "fastly_service_acl_entries"' in result.output
+    assert "entry {" in result.output
+
+
+def test_show_all_terraform_output_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    out = tmp_path / "fastly.tf"
+    result = runner.invoke(
+        cli.app, ["show", "all", "--format", "terraform", *_creds("--output", str(out))]
+    )
+    assert result.exit_code == 0
+    written = out.read_text(encoding="utf-8")
+    assert 'resource "fastly_service_vcl"' in written
+    assert "fastly_service_acl_entries" in written
+    assert f"wrote to {out}" in result.output

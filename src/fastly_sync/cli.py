@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Collection
+from enum import StrEnum
 from pathlib import Path
 
 import typer
 
-from . import __version__
+from . import __version__, terraform
 from .blocklist import dump_blocklist, load_blocklist
 from .config import load_settings
 from .errors import FastlySyncError
@@ -20,6 +21,14 @@ from .show import LiveConfig, gather
 from .spec import build_desired_state, load_spec
 from .sync import ALL_COMPONENTS, Component, select_state, synchronize
 from .waf import DEFAULT_ACL_NAME, bootstrap_acl, synchronize_blocklist
+
+
+class OutputFormat(StrEnum):
+    """Output format for the show commands."""
+
+    TEXT = "text"
+    TERRAFORM = "terraform"
+
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -61,6 +70,12 @@ _DRY_RUN_OPTION = typer.Option(
 )
 _NO_CONFIRM_OPTION = typer.Option(
     False, "--no-confirm", help="apply without the interactive confirmation prompt"
+)
+_OUTPUT_OPTION = typer.Option(
+    None, "--output", "-o", help="write the output to this file instead of stdout"
+)
+_FORMAT_OPTION = typer.Option(
+    OutputFormat.TEXT, "--format", help="output format (text or terraform)"
 )
 
 
@@ -313,10 +328,6 @@ def sync_waf(
 
 # --- show <target> -----------------------------------------------------
 
-_OUTPUT_OPTION = typer.Option(
-    None, "--output", "-o", help="write the output to this file instead of stdout"
-)
-
 
 def _lines(*parts: str) -> str:
     return "".join(f"{part}\n" for part in parts)
@@ -383,43 +394,53 @@ def _show(
 
 @show_app.command("cdn")
 def show_cdn(
+    fmt: OutputFormat = _FORMAT_OPTION,
     output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live CDN cache settings (``--output`` writes to a file)."""
-    _show(
-        token,
-        service_id,
-        lambda config: _render_version(config) + _render_cdn(config),
-        output,
-    )
+    """Show the live CDN cache settings (text or terraform)."""
+
+    def render(config: LiveConfig) -> str:
+        if fmt is OutputFormat.TERRAFORM:
+            return terraform.render(config, DEFAULT_ACL_NAME, cdn=True)
+        return _render_version(config) + _render_cdn(config)
+
+    _show(token, service_id, render, output)
 
 
 @show_app.command("rate-limiter")
 def show_rate_limiter(
+    fmt: OutputFormat = _FORMAT_OPTION,
     output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live rate limiters (``--output`` writes to a file)."""
-    _show(
-        token,
-        service_id,
-        lambda config: _render_version(config) + _render_rate_limiters(config),
-        output,
-    )
+    """Show the live rate limiters (text or terraform)."""
+
+    def render(config: LiveConfig) -> str:
+        if fmt is OutputFormat.TERRAFORM:
+            return terraform.render(config, DEFAULT_ACL_NAME, ratelimit=True)
+        return _render_version(config) + _render_rate_limiters(config)
+
+    _show(token, service_id, render, output)
 
 
 @show_app.command("all")
 def show_all(
     acl_name: str = _ACL_NAME_OPTION,
+    fmt: OutputFormat = _FORMAT_OPTION,
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live CDN, rate limiter and WAF config."""
+    """Show the live CDN, rate limiter and WAF config (text or terraform)."""
 
     def render(config: LiveConfig) -> str:
+        if fmt is OutputFormat.TERRAFORM:
+            return terraform.render(
+                config, acl_name, cdn=True, ratelimit=True, waf=True
+            )
         return (
             _render_version(config)
             + _render_cdn(config)
@@ -427,23 +448,26 @@ def show_all(
             + _render_waf(config, acl_name)
         )
 
-    _show(token, service_id, render, None, acl_name)
+    _show(token, service_id, render, output, acl_name)
 
 
 @show_app.command("waf")
 def show_waf(
     acl_name: str = _ACL_NAME_OPTION,
+    fmt: OutputFormat = _FORMAT_OPTION,
     output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live WAF blocklist (``--output`` writes the blocklist format)."""
+    """Show the live WAF blocklist (text blocklist, or terraform)."""
 
     def run() -> None:
         settings = load_settings(token, service_id)
         with FastlyClient(settings.token, settings.service_id) as client:
             config = gather(client, acl_name)
-        if output is None:
+        if fmt is OutputFormat.TERRAFORM:
+            _emit(terraform.render(config, acl_name, waf=True), output)
+        elif output is None:
             typer.echo(
                 _render_version(config) + _render_waf(config, acl_name), nl=False
             )
