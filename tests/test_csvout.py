@@ -18,6 +18,7 @@ CONFIG = LiveConfig(
         }
     ],
     conditions=[],
+    headers=[],
     rate_limiters=[
         {
             "name": "fsync-widgets",
@@ -40,9 +41,9 @@ CONFIG = LiveConfig(
 def test_render_cdn_csv():
     out = csvout.render_cdn(CONFIG)
     lines = out.splitlines()
-    assert lines[0] == "name,action,ttl,stale_ttl,cache_condition,description"
+    assert lines[0] == "name,methods,action,ttl,stale_ttl,cache_condition,description"
     # A comma in the description is properly quoted.
-    assert lines[1] == '/widgets,cache,60,300,cache-widgets,"Public, comma, note"'
+    assert lines[1] == '/widgets,,cache,60,300,cache-widgets,"Public, comma, note"'
 
 
 def test_render_rate_limiters_csv():
@@ -62,6 +63,7 @@ def test_render_rate_limiters_csv_list_http_methods():
         version=1,
         cache_settings=[],
         conditions=[],
+        headers=[],
         rate_limiters=[{"name": "fsync-x", "http_methods": ["GET", "HEAD"]}],
         blocklist=(),
     )

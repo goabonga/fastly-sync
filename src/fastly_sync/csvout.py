@@ -24,6 +24,7 @@ def render_cdn(config: LiveConfig) -> str:
     rows = [
         [
             setting.get("name", ""),
+            setting.get("methods", ""),
             setting.get("action", ""),
             setting.get("ttl", ""),
             setting.get("stale_ttl", ""),
@@ -33,7 +34,16 @@ def render_cdn(config: LiveConfig) -> str:
         for setting in config.cache_settings
     ]
     return _csv(
-        ["name", "action", "ttl", "stale_ttl", "cache_condition", "description"], rows
+        [
+            "name",
+            "methods",
+            "action",
+            "ttl",
+            "stale_ttl",
+            "cache_condition",
+            "description",
+        ],
+        rows,
     )
 
 

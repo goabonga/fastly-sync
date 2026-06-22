@@ -9,12 +9,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .fastly import RATELIMIT_NAME_PREFIX, FastlyClient, managed_rate_limiter_name
+from .fastly import (
+    RATELIMIT_NAME_PREFIX,
+    FastlyClient,
+    managed_rate_limiter_name,
+    serve_stale_header_data,
+)
 from .models import BlockEntry, DesiredState
 from .waf import DEFAULT_ACL_NAME, export_blocklist
 
 # Cache settings we manage are scoped to a "cache-…" condition (see spec.py).
 _OWNED_CONDITION_PREFIX = "cache-"
+_OWNED_HEADER_PREFIX = "serve-stale-"
 
 
 @dataclass(frozen=True)
@@ -24,6 +30,7 @@ class LiveConfig:
     version: int
     cache_settings: list[dict[str, Any]]
     conditions: list[dict[str, Any]]
+    headers: list[dict[str, Any]]
     rate_limiters: list[dict[str, Any]]
     blocklist: tuple[BlockEntry, ...]
 
@@ -44,8 +51,15 @@ def from_desired_state(
             "stale_ttl": endpoint.stale_if_error,
             "cache_condition": endpoint.condition_name,
             "description": endpoint.description,
+            "methods": ",".join(endpoint.methods),
         }
         for endpoint in state.endpoints
+    ]
+    headers = [
+        serve_stale_header_data(endpoint)
+        for endpoint in state.endpoints
+        if endpoint.action == "cache"
+        and (endpoint.stale_while_revalidate or endpoint.stale_if_error)
     ]
     conditions = [
         {
@@ -77,6 +91,7 @@ def from_desired_state(
         version=0,
         cache_settings=cache_settings,
         conditions=conditions,
+        headers=headers,
         rate_limiters=rate_limiters,
         blocklist=tuple(blocklist),
     )
@@ -93,6 +108,11 @@ def gather(client: FastlyClient, acl_name: str = DEFAULT_ACL_NAME) -> LiveConfig
         cond
         for cond in client.list_conditions(version)
         if str(cond.get("name", "")).startswith(_OWNED_CONDITION_PREFIX)
+    ]
+    headers = [
+        header
+        for header in client.list_headers(version)
+        if str(header.get("name", "")).startswith(_OWNED_HEADER_PREFIX)
     ]
     # The cache_settings object has no comment field, so descriptions live on
     # the matching condition's comment (see fastly.upsert_condition).
@@ -119,6 +139,7 @@ def gather(client: FastlyClient, acl_name: str = DEFAULT_ACL_NAME) -> LiveConfig
         version=version,
         cache_settings=cache_settings,
         conditions=conditions,
+        headers=headers,
         rate_limiters=rate_limiters,
         blocklist=blocklist,
     )

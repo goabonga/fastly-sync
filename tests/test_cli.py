@@ -319,8 +319,11 @@ def test_sync_cdn_render_csv(tmp_path):
         ["sync", "cdn", "--openapi", _write_spec(tmp_path), "--format", "csv"],
     )
     assert result.exit_code == 0
-    assert "name,action,ttl,stale_ttl,cache_condition,description" in result.output
-    assert "/widgets," in result.output
+    assert (
+        "name,methods,action,ttl,stale_ttl,cache_condition,description" in result.output
+    )
+    # Methods come from the spec on the sync side.
+    assert "/widgets,GET," in result.output
 
 
 def test_sync_rate_limiter_render_csv(tmp_path):
@@ -597,8 +600,10 @@ def test_show_cdn_csv(monkeypatch):
     monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
     result = runner.invoke(cli.app, ["show", "cdn", "--format", "csv", *_creds()])
     assert result.exit_code == 0
-    assert "name,action,ttl,stale_ttl,cache_condition,description" in result.output
-    assert "/widgets,cache,60" in result.output
+    assert (
+        "name,methods,action,ttl,stale_ttl,cache_condition,description" in result.output
+    )
+    assert "/widgets,,cache,60" in result.output
 
 
 def test_show_rate_limiter_csv(monkeypatch):

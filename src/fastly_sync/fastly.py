@@ -25,6 +25,24 @@ def managed_rate_limiter_name(name: str) -> str:
     return f"{RATELIMIT_NAME_PREFIX}{name}"
 
 
+def serve_stale_header_data(endpoint: CdnEndpoint) -> dict[str, Any]:
+    """Build the ``Surrogate-Control`` header object for an endpoint."""
+    directives = []
+    if endpoint.stale_while_revalidate:
+        directives.append(f"stale-while-revalidate={endpoint.stale_while_revalidate}")
+    if endpoint.stale_if_error:
+        directives.append(f"stale-if-error={endpoint.stale_if_error}")
+    return {
+        "name": f"serve-stale-{endpoint.condition_name}",
+        "type": "cache",
+        "action": "set",
+        "dst": "http.Surrogate-Control",
+        "src": ", ".join(directives),
+        "cache_condition": endpoint.condition_name,
+        "priority": 10,
+    }
+
+
 class FastlyClient:
     """Minimal Fastly API client scoped to a single service.
 
@@ -156,26 +174,11 @@ class FastlyClient:
         the directive is self-contained. The header is scoped to the endpoint
         through its cache condition.
         """
-        directives = []
-        if endpoint.stale_while_revalidate:
-            directives.append(
-                f"stale-while-revalidate={endpoint.stale_while_revalidate}"
-            )
-        if endpoint.stale_if_error:
-            directives.append(f"stale-if-error={endpoint.stale_if_error}")
-        name = f"serve-stale-{endpoint.condition_name}"
+        data = serve_stale_header_data(endpoint)
         self._request(
             "PUT",
-            f"/service/{self._service_id}/version/{version}/header/{name}",
-            data={
-                "name": name,
-                "type": "cache",
-                "action": "set",
-                "dst": "http.Surrogate-Control",
-                "src": ", ".join(directives),
-                "cache_condition": endpoint.condition_name,
-                "priority": 10,
-            },
+            f"/service/{self._service_id}/version/{version}/header/{data['name']}",
+            data=data,
         )
 
     def activate_version(self, version: int) -> None:

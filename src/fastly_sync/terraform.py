@@ -80,6 +80,20 @@ def _rate_limiter_block(limiter: dict[str, Any]) -> str:
     return "".join(lines)
 
 
+def _header_block(header: dict[str, Any]) -> str:
+    return (
+        "  header {\n"
+        f"    name            = {_hcl(header.get('name', ''))}\n"
+        f"    type            = {_hcl(header.get('type', 'cache'))}\n"
+        f"    action          = {_hcl(header.get('action', 'set'))}\n"
+        f"    destination     = {_hcl(header.get('dst', ''))}\n"
+        f"    source          = {_hcl(header.get('src', ''))}\n"
+        f"    cache_condition = {_hcl(header.get('cache_condition', ''))}\n"
+        f"    priority        = {int(header.get('priority', 10))}\n"
+        "  }\n"
+    )
+
+
 def _acl_block(acl_name: str) -> str:
     return f"  acl {{\n    name = {_hcl(acl_name)}\n  }}\n"
 
@@ -107,6 +121,7 @@ def render(
     if cdn:
         inner += [_condition_block(c) for c in config.conditions]
         inner += [_cache_setting_block(s) for s in config.cache_settings]
+        inner += [_header_block(h) for h in config.headers]
     if ratelimit:
         inner += [_rate_limiter_block(r) for r in config.rate_limiters]
     if waf:

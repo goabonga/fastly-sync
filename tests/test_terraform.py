@@ -24,6 +24,17 @@ CONFIG = LiveConfig(
             "priority": 10,
         }
     ],
+    headers=[
+        {
+            "name": "serve-stale-cache-widgets",
+            "type": "cache",
+            "action": "set",
+            "dst": "http.Surrogate-Control",
+            "src": "stale-while-revalidate=60",
+            "cache_condition": "cache-widgets",
+            "priority": 10,
+        }
+    ],
     rate_limiters=[{"name": "fsync-widgets", "rps_limit": 100, "window_size": 60}],
     blocklist=(
         BlockEntry("198.51.100.7", None, "bad"),
@@ -40,6 +51,9 @@ def test_render_cdn():
     assert "condition {" in hcl
     # The VCL statement's quotes are escaped for HCL.
     assert r'statement = "req.url ~ \"^/widgets\""' in hcl
+    # Serve-stale header block is part of the CDN scope.
+    assert "header {" in hcl
+    assert 'destination     = "http.Surrogate-Control"' in hcl
     assert "rate_limiter {" not in hcl
     assert "fastly_service_acl_entries" not in hcl
 
@@ -57,6 +71,7 @@ def test_render_rate_limiter_all_fields():
         version=1,
         cache_settings=[],
         conditions=[],
+        headers=[],
         rate_limiters=[
             {
                 "name": "fsync-login",
@@ -111,6 +126,7 @@ def test_hcl_escaping():
         version=1,
         cache_settings=[],
         conditions=[{"name": "cache-x", "statement": 'a"b\\c', "type": "CACHE"}],
+        headers=[],
         rate_limiters=[],
         blocklist=(),
     )
@@ -120,6 +136,11 @@ def test_hcl_escaping():
 
 def test_render_nothing_when_empty():
     config = LiveConfig(
-        version=1, cache_settings=[], conditions=[], rate_limiters=[], blocklist=()
+        version=1,
+        cache_settings=[],
+        conditions=[],
+        headers=[],
+        rate_limiters=[],
+        blocklist=(),
     )
     assert terraform.render(config, "waf_blocklist", cdn=True) == ""
