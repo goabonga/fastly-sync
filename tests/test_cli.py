@@ -288,14 +288,103 @@ def test_sync_cdn_no_prune(tmp_path, monkeypatch):
     assert "pruned 0 orphan(s)" in result.output
 
 
-def test_sync_reports_errors(monkeypatch):
+def test_sync_reports_errors(tmp_path, monkeypatch):
     def boom(*args, **kwargs):
         raise ConfigError("missing required configuration: FASTLY_API_TOKEN")
 
     monkeypatch.setattr(cli, "load_settings", boom)
-    result = runner.invoke(cli.app, ["sync", "cdn", "--openapi", "ignored"])
+    result = runner.invoke(cli.app, ["sync", "cdn", "--openapi", _write_spec(tmp_path)])
     assert result.exit_code == 1
     assert "error: missing required configuration" in result.output
+
+
+# --- sync <target> --format (render the desired config, no apply, offline) ----
+
+
+def test_sync_cdn_render_terraform(tmp_path):
+    # No --token/--service-id: rendering is offline.
+    result = runner.invoke(
+        cli.app,
+        ["sync", "cdn", "--openapi", _write_spec(tmp_path), "--format", "terraform"],
+    )
+    assert result.exit_code == 0
+    assert 'resource "fastly_service_vcl"' in result.output
+    assert "cache_setting {" in result.output
+    assert "fastly_service_acl_entries" not in result.output
+
+
+def test_sync_cdn_render_csv(tmp_path):
+    result = runner.invoke(
+        cli.app,
+        ["sync", "cdn", "--openapi", _write_spec(tmp_path), "--format", "csv"],
+    )
+    assert result.exit_code == 0
+    assert "name,action,ttl,stale_ttl,cache_condition,description" in result.output
+    assert "/widgets," in result.output
+
+
+def test_sync_rate_limiter_render_csv(tmp_path):
+    result = runner.invoke(
+        cli.app,
+        ["sync", "rate-limiter", "--openapi", _write_spec(tmp_path), "--format", "csv"],
+    )
+    assert result.exit_code == 0
+    assert "name,rps_limit,window_size" in result.output
+    assert "fsync-widgets,100,60" in result.output
+
+
+def test_sync_all_render_csv(tmp_path):
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "all",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--blocklist",
+            _write_blocklist(tmp_path),
+            "--format",
+            "csv",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "kind,name,detail" in result.output
+    assert "cdn,/widgets," in result.output
+    assert "waf,203.0.113.0/24," in result.output
+
+
+def test_sync_all_render_terraform_to_file(tmp_path):
+    out = tmp_path / "fastly.tf"
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "all",
+            "--openapi",
+            _write_spec(tmp_path),
+            "--blocklist",
+            _write_blocklist(tmp_path),
+            "--format",
+            "terraform",
+            "--output",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0
+    written = out.read_text(encoding="utf-8")
+    assert 'resource "fastly_service_vcl"' in written
+    assert "fastly_service_acl_entries" in written
+    assert "203.0.113.0" in written
+
+
+def test_sync_waf_render_csv(tmp_path):
+    result = runner.invoke(
+        cli.app,
+        ["sync", "waf", "--blocklist", _write_blocklist(tmp_path), "--format", "csv"],
+    )
+    assert result.exit_code == 0
+    assert "ip,subnet,comment" in result.output
+    assert "203.0.113.0,24," in result.output
 
 
 # --- sync waf ----------------------------------------------------------

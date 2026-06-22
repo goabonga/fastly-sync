@@ -16,8 +16,8 @@ from .blocklist import dump_blocklist, load_blocklist
 from .config import load_settings
 from .errors import FastlySyncError
 from .fastly import FastlyClient
-from .models import SyncResult
-from .show import LiveConfig, gather
+from .models import DesiredState, SyncResult
+from .show import LiveConfig, from_desired_state, gather
 from .spec import build_desired_state, load_spec
 from .sync import ALL_COMPONENTS, Component, select_state, synchronize
 from .waf import DEFAULT_ACL_NAME, bootstrap_acl, synchronize_blocklist
@@ -129,6 +129,26 @@ def _root(
 # --- sync <target> -----------------------------------------------------
 
 
+def _render_config(
+    config: LiveConfig,
+    fmt: OutputFormat,
+    acl_name: str,
+    *,
+    cdn: bool,
+    ratelimit: bool,
+    waf: bool,
+) -> str:
+    if fmt is OutputFormat.TERRAFORM:
+        return terraform.render(config, acl_name, cdn=cdn, ratelimit=ratelimit, waf=waf)
+    if cdn and ratelimit:
+        return csvout.render_all(config)
+    if cdn:
+        return csvout.render_cdn(config)
+    if ratelimit:
+        return csvout.render_rate_limiters(config)
+    return csvout.render_waf(config)
+
+
 def _run_openapi_sync(
     *,
     openapi: str,
@@ -136,12 +156,31 @@ def _run_openapi_sync(
     prune: bool,
     no_confirm: bool,
     dry_run: bool,
+    fmt: OutputFormat,
+    output: Path | None,
     token: str | None,
     service_id: str | None,
 ) -> None:
+    cdn = Component.CDN in components
+    ratelimit = Component.RATELIMIT in components
+
     def run() -> None:
-        settings = load_settings(token, service_id)
         state = select_state(build_desired_state(load_spec(openapi)), components)
+        if fmt is not OutputFormat.TEXT:
+            config = from_desired_state(state, ())
+            _emit(
+                _render_config(
+                    config,
+                    fmt,
+                    DEFAULT_ACL_NAME,
+                    cdn=cdn,
+                    ratelimit=ratelimit,
+                    waf=False,
+                ),
+                output,
+            )
+            return
+        settings = load_settings(token, service_id)
         with FastlyClient(settings.token, settings.service_id) as client:
             plan = synchronize(
                 state, client, components=components, prune=prune, dry_run=True
@@ -168,17 +207,21 @@ def sync_cdn(
     openapi: str = _OPENAPI_OPTION,
     prune: bool = _PRUNE_OPTION,
     no_confirm: bool = _NO_CONFIRM_OPTION,
+    fmt: OutputFormat = _FORMAT_OPTION,
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
 ) -> None:
-    """Synchronise only the CDN cache settings."""
+    """Synchronise the CDN cache settings (or render them with --format)."""
     _run_openapi_sync(
         openapi=openapi,
         components=frozenset({Component.CDN}),
         prune=prune,
         no_confirm=no_confirm,
         dry_run=dry_run,
+        fmt=fmt,
+        output=output,
         token=token,
         service_id=service_id,
     )
@@ -189,17 +232,21 @@ def sync_rate_limiter(
     openapi: str = _OPENAPI_OPTION,
     prune: bool = _PRUNE_OPTION,
     no_confirm: bool = _NO_CONFIRM_OPTION,
+    fmt: OutputFormat = _FORMAT_OPTION,
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
 ) -> None:
-    """Synchronise only the rate limiters."""
+    """Synchronise the rate limiters (or render them with --format)."""
     _run_openapi_sync(
         openapi=openapi,
         components=frozenset({Component.RATELIMIT}),
         prune=prune,
         no_confirm=no_confirm,
         dry_run=dry_run,
+        fmt=fmt,
+        output=output,
         token=token,
         service_id=service_id,
     )
@@ -220,16 +267,27 @@ def sync_all(
     ),
     prune: bool = _PRUNE_OPTION,
     no_confirm: bool = _NO_CONFIRM_OPTION,
+    fmt: OutputFormat = _FORMAT_OPTION,
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
 ) -> None:
-    """Synchronise CDN cache, rate limiters and the WAF blocklist together."""
+    """Synchronise CDN, rate limiters and the WAF blocklist (or render them)."""
 
     def run() -> None:
-        settings = load_settings(token, service_id)
         state = select_state(build_desired_state(load_spec(openapi)), ALL_COMPONENTS)
         entries = load_blocklist(blocklist)
+        if fmt is not OutputFormat.TEXT:
+            config = from_desired_state(state, entries)
+            _emit(
+                _render_config(
+                    config, fmt, acl_name, cdn=True, ratelimit=True, waf=True
+                ),
+                output,
+            )
+            return
+        settings = load_settings(token, service_id)
         with FastlyClient(settings.token, settings.service_id) as client:
             plan = synchronize(
                 state, client, components=ALL_COMPONENTS, prune=prune, dry_run=True
@@ -284,15 +342,26 @@ def sync_waf(
         False, "--bootstrap", help="create the ACL and VCL snippet before syncing"
     ),
     no_confirm: bool = _NO_CONFIRM_OPTION,
+    fmt: OutputFormat = _FORMAT_OPTION,
+    output: Path | None = _OUTPUT_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
 ) -> None:
-    """Reconcile the WAF IP blocklist (Edge ACL) from a text file."""
+    """Reconcile the WAF IP blocklist (Edge ACL), or render it with --format."""
 
     def run() -> None:
-        settings = load_settings(token, service_id)
         entries = load_blocklist(blocklist)
+        if fmt is not OutputFormat.TEXT:
+            config = from_desired_state(DesiredState((), ()), entries)
+            _emit(
+                _render_config(
+                    config, fmt, acl_name, cdn=False, ratelimit=False, waf=True
+                ),
+                output,
+            )
+            return
+        settings = load_settings(token, service_id)
         with FastlyClient(settings.token, settings.service_id) as client:
             if bootstrap:
                 # The ACL does not exist yet, so a diff is not possible; the

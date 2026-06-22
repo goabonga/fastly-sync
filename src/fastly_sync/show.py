@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .fastly import RATELIMIT_NAME_PREFIX, FastlyClient
-from .models import BlockEntry
+from .fastly import RATELIMIT_NAME_PREFIX, FastlyClient, managed_rate_limiter_name
+from .models import BlockEntry, DesiredState
 from .waf import DEFAULT_ACL_NAME, export_blocklist
 
 # Cache settings we manage are scoped to a "cache-…" condition (see spec.py).
@@ -25,6 +26,52 @@ class LiveConfig:
     conditions: list[dict[str, Any]]
     rate_limiters: list[dict[str, Any]]
     blocklist: tuple[BlockEntry, ...]
+
+
+def from_desired_state(
+    state: DesiredState, blocklist: Sequence[BlockEntry]
+) -> LiveConfig:
+    """Build a :class:`LiveConfig` from the spec-derived desired state.
+
+    Lets ``sync`` render the *desired* config (terraform / csv) with the same
+    renderers used by ``show`` — offline, without contacting Fastly.
+    """
+    cache_settings = [
+        {
+            "name": endpoint.path,
+            "action": endpoint.action,
+            "ttl": endpoint.ttl,
+            "stale_ttl": endpoint.stale_if_error,
+            "cache_condition": endpoint.condition_name,
+            "description": endpoint.description,
+        }
+        for endpoint in state.endpoints
+    ]
+    conditions = [
+        {
+            "name": endpoint.condition_name,
+            "statement": endpoint.match_statement,
+            "type": "CACHE",
+            "priority": 10,
+            "comment": endpoint.description,
+        }
+        for endpoint in state.endpoints
+    ]
+    rate_limiters = [
+        {
+            "name": managed_rate_limiter_name(rule.name),
+            "rps_limit": rule.limit,
+            "window_size": rule.window,
+        }
+        for rule in state.rate_limiters
+    ]
+    return LiveConfig(
+        version=0,
+        cache_settings=cache_settings,
+        conditions=conditions,
+        rate_limiters=rate_limiters,
+        blocklist=tuple(blocklist),
+    )
 
 
 def gather(client: FastlyClient, acl_name: str = DEFAULT_ACL_NAME) -> LiveConfig:
