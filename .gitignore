@@ -23,3 +23,8 @@ site/
 
 # Dependabot-generated requirements (Debian builds)
 debian/requirements.txt
+
+# Local demo / scratch inputs (never committed)
+/openapi.json
+/blocklist.txt
+/*.tf
