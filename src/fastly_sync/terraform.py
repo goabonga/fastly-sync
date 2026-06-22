@@ -44,18 +44,40 @@ def _cache_setting_block(setting: dict[str, Any]) -> str:
     )
 
 
+def _http_methods_hcl(value: object) -> str:
+    # Accept a comma string (our model) or a list (live API) -> comma string.
+    if isinstance(value, list):
+        value = ",".join(str(method) for method in value)
+    return _hcl(value or "GET")
+
+
 def _rate_limiter_block(limiter: dict[str, Any]) -> str:
-    return (
-        "  rate_limiter {\n"
-        f"    name                 = {_hcl(limiter.get('name', ''))}\n"
-        f"    http_methods         = {_hcl(limiter.get('http_methods', 'GET'))}\n"
-        f"    rps_limit            = {int(limiter.get('rps_limit', 0))}\n"
-        f"    window_size          = {int(limiter.get('window_size', 60))}\n"
-        f"    penalty_box_duration = {int(limiter.get('penalty_box_duration', 1))}\n"
-        f"    action               = {_hcl(limiter.get('action', 'response'))}\n"
-        f"    client_key           = {_hcl(limiter.get('client_key', 'req.http.Fastly-Client-IP'))}\n"
-        "  }\n"
-    )
+    lines = [
+        "  rate_limiter {\n",
+        f"    name                 = {_hcl(limiter.get('name', ''))}\n",
+        f"    http_methods         = {_http_methods_hcl(limiter.get('http_methods'))}\n",
+        f"    rps_limit            = {int(limiter.get('rps_limit', 0))}\n",
+        f"    window_size          = {int(limiter.get('window_size', 60))}\n",
+        f"    penalty_box_duration = {int(limiter.get('penalty_box_duration', 1))}\n",
+        f"    action               = {_hcl(limiter.get('action', 'response'))}\n",
+        f"    client_key           = {_hcl(limiter.get('client_key', 'req.http.Fastly-Client-IP'))}\n",
+        f"    feature_revision     = {int(limiter.get('feature_revision', 1))}\n",
+    ]
+    for key in ("logger_type", "response_object_name", "uri_dictionary_name"):
+        value = limiter.get(key)
+        if value:
+            lines.append(f"    {key:<20} = {_hcl(value)}\n")
+    response = limiter.get("response")
+    if isinstance(response, dict):
+        lines.append(
+            "    response {\n"
+            f"      status       = {int(response.get('status', 429))}\n"
+            f"      content_type = {_hcl(response.get('content_type', 'text/plain'))}\n"
+            f"      content      = {_hcl(response.get('content', ''))}\n"
+            "    }\n"
+        )
+    lines.append("  }\n")
+    return "".join(lines)
 
 
 def _acl_block(acl_name: str) -> str:

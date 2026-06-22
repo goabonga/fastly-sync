@@ -72,7 +72,7 @@ def build_desired_state(spec: dict[str, Any]) -> DesiredState:
         )
         if methods:
             endpoints.append(_cache_for(path, item, methods))
-        rule = _rate_limit_for(path, item)
+        rule = _rate_limit_for(path, item, methods)
         if rule is not None:
             rate_limiters.append(rule)
 
@@ -131,17 +131,43 @@ def _cache_for(
     )
 
 
-def _rate_limit_for(path: str, item: dict[str, Any]) -> RateLimiterRule | None:
+def _rate_limit_for(
+    path: str, item: dict[str, Any], methods: tuple[str, ...]
+) -> RateLimiterRule | None:
     extension = item.get(_RATELIMIT_KEY)
     if not isinstance(extension, dict):
         return None
     try:
         limit = int(extension["limit"])
         window = int(extension.get("window", _DEFAULT_WINDOW))
+        penalty_box_duration = int(extension.get("penalty_box_duration", 1))
+        feature_revision = int(extension.get("feature_revision", 1))
     except (KeyError, TypeError, ValueError) as exc:
         raise SpecError(f"invalid {_RATELIMIT_KEY} for '{path}': {exc}") from exc
-    name = str(extension.get("name") or _slug(path))
-    return RateLimiterRule(name=name, path=path, limit=limit, window=window)
+    return RateLimiterRule(
+        name=str(extension.get("name") or _slug(path)),
+        path=path,
+        limit=limit,
+        window=window,
+        http_methods=_http_methods(extension.get("http_methods"), methods),
+        action=str(extension.get("action", "response")),
+        penalty_box_duration=penalty_box_duration,
+        client_key=str(extension.get("client_key", "req.http.Fastly-Client-IP")),
+        logger_type=str(extension.get("logger_type", "")),
+        response_object_name=str(extension.get("response_object_name", "")),
+        uri_dictionary_name=str(extension.get("uri_dictionary_name", "")),
+        feature_revision=feature_revision,
+    )
+
+
+def _http_methods(value: object, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    # Default to the path's HTTP methods (or GET); accept a list or a
+    # comma-separated string in the extension.
+    if isinstance(value, str):
+        return tuple(part.strip().upper() for part in value.split(",") if part.strip())
+    if isinstance(value, list):
+        return tuple(str(method).upper() for method in value)
+    return fallback or ("GET",)
 
 
 def _slug(path: str) -> str:

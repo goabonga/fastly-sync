@@ -37,16 +37,34 @@ def render_cdn(config: LiveConfig) -> str:
     )
 
 
+_RATE_LIMITER_COLUMNS = [
+    "name",
+    "http_methods",
+    "rps_limit",
+    "window_size",
+    "penalty_box_duration",
+    "action",
+    "client_key",
+    "logger_type",
+    "response_object_name",
+    "uri_dictionary_name",
+    "feature_revision",
+]
+
+
+def _http_methods(value: object) -> str:
+    if isinstance(value, list):
+        return ",".join(str(method) for method in value)
+    return str(value or "")
+
+
 def render_rate_limiters(config: LiveConfig) -> str:
-    rows = [
-        [
-            limiter.get("name", ""),
-            limiter.get("rps_limit", ""),
-            limiter.get("window_size", ""),
-        ]
-        for limiter in config.rate_limiters
-    ]
-    return _csv(["name", "rps_limit", "window_size"], rows)
+    rows = []
+    for limiter in config.rate_limiters:
+        row = [limiter.get(column, "") for column in _RATE_LIMITER_COLUMNS]
+        row[1] = _http_methods(limiter.get("http_methods"))
+        rows.append(row)
+    return _csv(_RATE_LIMITER_COLUMNS, rows)
 
 
 def render_waf(config: LiveConfig) -> str:

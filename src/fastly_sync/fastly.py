@@ -125,14 +125,27 @@ class FastlyClient:
     def upsert_rate_limiter(self, version: int, rule: RateLimiterRule) -> None:
         """Create or update a rate limiter rule (named with our owner prefix)."""
         name = managed_rate_limiter_name(rule.name)
+        data: dict[str, Any] = {
+            "name": name,
+            "http_methods": ",".join(rule.http_methods),
+            "rps_limit": rule.limit,
+            "window_size": rule.window,
+            "penalty_box_duration": rule.penalty_box_duration,
+            "action": rule.action,
+            "client_key": rule.client_key,
+            "feature_revision": rule.feature_revision,
+        }
+        for key, value in (
+            ("logger_type", rule.logger_type),
+            ("response_object_name", rule.response_object_name),
+            ("uri_dictionary_name", rule.uri_dictionary_name),
+        ):
+            if value:
+                data[key] = value
         self._request(
             "PUT",
             f"/service/{self._service_id}/version/{version}/rate-limiters/{name}",
-            data={
-                "name": name,
-                "rps_limit": rule.limit,
-                "window_size": rule.window,
-            },
+            data=data,
         )
 
     def upsert_serve_stale_header(self, version: int, endpoint: CdnEndpoint) -> None:

@@ -329,8 +329,10 @@ def test_sync_rate_limiter_render_csv(tmp_path):
         ["sync", "rate-limiter", "--openapi", _write_spec(tmp_path), "--format", "csv"],
     )
     assert result.exit_code == 0
-    assert "name,rps_limit,window_size" in result.output
-    assert "fsync-widgets,100,60" in result.output
+    assert (
+        "name,http_methods,rps_limit,window_size,penalty_box_duration" in result.output
+    )
+    assert "fsync-widgets,GET,100,60,1,response" in result.output
 
 
 def test_sync_all_render_csv(tmp_path):
@@ -605,8 +607,10 @@ def test_show_rate_limiter_csv(monkeypatch):
         cli.app, ["show", "rate-limiter", "--format", "csv", *_creds()]
     )
     assert result.exit_code == 0
-    assert "name,rps_limit,window_size" in result.output
-    assert "fsync-widgets,100,60" in result.output
+    assert (
+        "name,http_methods,rps_limit,window_size,penalty_box_duration" in result.output
+    )
+    assert "fsync-widgets,,100,60" in result.output
 
 
 def test_show_waf_csv(monkeypatch):

@@ -64,7 +64,12 @@ def test_mutating_calls_issue_requests():
     )
     client.upsert_condition(7, endpoint)
     client.upsert_cache_setting(7, endpoint)
-    client.upsert_rate_limiter(7, RateLimiterRule("w", "/w", 100, 60))
+    client.upsert_rate_limiter(
+        7,
+        RateLimiterRule(
+            "w", "/w", 100, 60, http_methods=("GET", "POST"), logger_type="syslog"
+        ),
+    )
     client.activate_version(7)
 
     methods_paths = {(method, path) for method, path, _ in seen}
@@ -80,6 +85,11 @@ def test_mutating_calls_issue_requests():
         body for _, path, body in seen if path.endswith("/condition/cache-w")
     )
     assert "comment=Public+widgets" in condition_body
+    rl_body = next(
+        body for _, path, body in seen if path.endswith("/rate-limiters/fsync-w")
+    )
+    assert "http_methods=GET%2CPOST" in rl_body
+    assert "logger_type=syslog" in rl_body
 
 
 def test_serve_stale_header_sets_surrogate_control():

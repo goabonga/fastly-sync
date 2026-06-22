@@ -192,6 +192,57 @@ def test_rate_limit_default_window_and_slug_name():
     assert rule.name == "a-b"
 
 
+def test_rate_limiter_full_fields():
+    state = build_desired_state(
+        {
+            "paths": {
+                "/x": {
+                    "post": {},
+                    "x-fastly-ratelimit": {
+                        "limit": 5,
+                        "http_methods": "get, post",
+                        "action": "log_only",
+                        "penalty_box_duration": 30,
+                        "client_key": "req.http.X",
+                        "logger_type": "syslog",
+                        "response_object_name": "r",
+                        "uri_dictionary_name": "d",
+                        "feature_revision": 3,
+                    },
+                }
+            }
+        }
+    )
+    rule = state.rate_limiters[0]
+    assert rule.http_methods == ("GET", "POST")  # comma string, upper-cased
+    assert rule.action == "log_only"
+    assert rule.penalty_box_duration == 30
+    assert rule.client_key == "req.http.X"
+    assert rule.logger_type == "syslog"
+    assert rule.response_object_name == "r"
+    assert rule.uri_dictionary_name == "d"
+    assert rule.feature_revision == 3
+
+
+def test_rate_limiter_http_methods_list_and_default():
+    listed = build_desired_state(
+        {
+            "paths": {
+                "/x": {
+                    "get": {},
+                    "x-fastly-ratelimit": {"limit": 5, "http_methods": ["patch"]},
+                }
+            }
+        }
+    )
+    assert listed.rate_limiters[0].http_methods == ("PATCH",)
+    # Default to the path's methods when http_methods is omitted.
+    derived = build_desired_state(
+        {"paths": {"/y": {"get": {}, "post": {}, "x-fastly-ratelimit": {"limit": 5}}}}
+    )
+    assert derived.rate_limiters[0].http_methods == ("GET", "POST")
+
+
 def test_rate_limit_slug_falls_back_to_root():
     state = build_desired_state({"paths": {"/": {"x-fastly-ratelimit": {"limit": 5}}}})
     assert state.rate_limiters[0].name == "root"

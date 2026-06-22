@@ -33,12 +33,24 @@ class CdnEndpoint:
 
 @dataclass(frozen=True)
 class RateLimiterRule:
-    """A rate limiter derived from an ``x-fastly-ratelimit`` spec extension."""
+    """A rate limiter derived from an ``x-fastly-ratelimit`` spec extension.
+
+    Covers the writable fields of the Fastly rate limiter API / Terraform
+    provider block. ``limit`` / ``window`` map to ``rps_limit`` / ``window_size``.
+    """
 
     name: str
     path: str
     limit: int
     window: int
+    http_methods: tuple[str, ...] = ()
+    action: str = "response"
+    penalty_box_duration: int = 1
+    client_key: str = "req.http.Fastly-Client-IP"
+    logger_type: str = ""
+    response_object_name: str = ""
+    uri_dictionary_name: str = ""
+    feature_revision: int = 1
 
 
 @dataclass(frozen=True)

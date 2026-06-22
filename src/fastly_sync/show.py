@@ -60,8 +60,16 @@ def from_desired_state(
     rate_limiters = [
         {
             "name": managed_rate_limiter_name(rule.name),
+            "http_methods": ",".join(rule.http_methods),
             "rps_limit": rule.limit,
             "window_size": rule.window,
+            "penalty_box_duration": rule.penalty_box_duration,
+            "action": rule.action,
+            "client_key": rule.client_key,
+            "logger_type": rule.logger_type,
+            "response_object_name": rule.response_object_name,
+            "uri_dictionary_name": rule.uri_dictionary_name,
+            "feature_revision": rule.feature_revision,
         }
         for rule in state.rate_limiters
     ]
