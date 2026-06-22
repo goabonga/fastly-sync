@@ -69,10 +69,15 @@ def render_rate_limiters(config: LiveConfig) -> str:
 
 def render_waf(config: LiveConfig) -> str:
     rows = [
-        [entry.ip, "" if entry.subnet is None else entry.subnet, entry.comment]
+        [
+            entry.ip,
+            "" if entry.subnet is None else entry.subnet,
+            str(entry.negated).lower(),
+            entry.comment,
+        ]
         for entry in config.blocklist
     ]
-    return _csv(["ip", "subnet", "comment"], rows)
+    return _csv(["ip", "subnet", "negated", "comment"], rows)
 
 
 def render_all(config: LiveConfig) -> str:

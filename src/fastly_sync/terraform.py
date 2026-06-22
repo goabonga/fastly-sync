@@ -88,6 +88,7 @@ def _entry_block(entry: BlockEntry) -> str:
     lines = ["  entry {\n", f"    ip      = {_hcl(entry.ip)}\n"]
     if entry.subnet is not None:
         lines.append(f"    subnet  = {entry.subnet}\n")
+    lines.append(f"    negated = {str(entry.negated).lower()}\n")
     lines.append(f"    comment = {_hcl(entry.comment)}\n")
     lines.append("  }\n")
     return "".join(lines)

@@ -103,7 +103,10 @@ def export_blocklist(
     for raw in client.list_acl_entries(acl_id):
         ip, subnet = _current_key(raw)
         comment = str(raw.get("comment") or "")
-        entries.append(BlockEntry(ip=ip, subnet=subnet, comment=comment))
+        negated = str(raw.get("negated", "")) in ("1", "true", "True")
+        entries.append(
+            BlockEntry(ip=ip, subnet=subnet, comment=comment, negated=negated)
+        )
     return tuple(sorted(entries, key=lambda entry: (entry.ip, entry.subnet or 0)))
 
 

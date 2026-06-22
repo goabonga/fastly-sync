@@ -58,13 +58,14 @@ class BlockEntry:
     """An IP or CIDR to blacklist in a Fastly Edge ACL.
 
     ``subnet`` is the CIDR prefix length, or ``None`` for a single host. Two
-    entries are reconciled by their ``(ip, subnet)`` identity; ``comment`` is
-    metadata only.
+    entries are reconciled by their ``(ip, subnet)`` identity; ``comment`` and
+    ``negated`` (a "do NOT match" / allowlist entry) are metadata only.
     """
 
     ip: str
     subnet: int | None = None
     comment: str = ""
+    negated: bool = False
 
     @property
     def key(self) -> tuple[str, int | None]:

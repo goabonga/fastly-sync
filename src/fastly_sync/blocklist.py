@@ -49,11 +49,17 @@ def dump_blocklist(entries: Sequence[BlockEntry]) -> str:
     lines = []
     for entry in entries:
         cidr = entry.ip if entry.subnet is None else f"{entry.ip}/{entry.subnet}"
-        lines.append(f"{cidr}  # {entry.comment}" if entry.comment else cidr)
+        prefix = "!" if entry.negated else ""
+        head = f"{prefix}{cidr}"
+        lines.append(f"{head}  # {entry.comment}" if entry.comment else head)
     return "".join(f"{line}\n" for line in lines)
 
 
 def _parse_entry(token: str, comment: str, source: str, lineno: int) -> BlockEntry:
+    # A leading "!" marks a negated (allowlist) entry.
+    negated = token.startswith("!")
+    if negated:
+        token = token[1:].strip()
     try:
         network = ipaddress.ip_network(token, strict=False)
     except ValueError as exc:
@@ -62,4 +68,9 @@ def _parse_entry(token: str, comment: str, source: str, lineno: int) -> BlockEnt
         ) from exc
     is_host = network.prefixlen == network.max_prefixlen
     subnet = None if is_host else network.prefixlen
-    return BlockEntry(ip=str(network.network_address), subnet=subnet, comment=comment)
+    return BlockEntry(
+        ip=str(network.network_address),
+        subnet=subnet,
+        comment=comment,
+        negated=negated,
+    )

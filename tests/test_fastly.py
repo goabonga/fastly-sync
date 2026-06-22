@@ -175,7 +175,10 @@ def test_update_acl_entries_batches_ops():
     client, _ = make_client(handler)
     client.update_acl_entries(
         "ACL9",
-        [BlockEntry("203.0.113.0", 24, "botnet"), BlockEntry("198.51.100.7")],
+        [
+            BlockEntry("203.0.113.0", 24, "botnet"),
+            BlockEntry("198.51.100.7", negated=True),
+        ],
         ["e1"],
     )
     assert captured["path"] == "/service/svc/acl/ACL9/entries"
@@ -184,9 +187,15 @@ def test_update_acl_entries_batches_ops():
         "op": "create",
         "ip": "203.0.113.0",
         "comment": "botnet",
+        "negated": 0,
         "subnet": 24,
     } in ops
-    assert {"op": "create", "ip": "198.51.100.7", "comment": ""} in ops
+    assert {
+        "op": "create",
+        "ip": "198.51.100.7",
+        "comment": "",
+        "negated": 1,
+    } in ops
     assert {"op": "delete", "id": "e1"} in ops
 
 

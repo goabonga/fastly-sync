@@ -72,9 +72,9 @@ def test_render_rate_limiters_csv_list_http_methods():
 def test_render_waf_csv():
     out = csvout.render_waf(CONFIG)
     assert out.splitlines() == [
-        "ip,subnet,comment",
-        "198.51.100.7,,bad",
-        "203.0.113.0,24,",
+        "ip,subnet,negated,comment",
+        "198.51.100.7,,false,bad",
+        "203.0.113.0,24,false,",
     ]
 
 

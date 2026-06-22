@@ -302,6 +302,7 @@ class FastlyClient:
                 "op": "create",
                 "ip": entry.ip,
                 "comment": entry.comment,
+                "negated": 1 if entry.negated else 0,
             }
             if entry.subnet is not None:
                 op["subnet"] = entry.subnet

@@ -66,6 +66,20 @@ def test_dump_empty_is_empty_string():
     assert dump_blocklist(()) == ""
 
 
+def test_negated_entry_round_trips(tmp_path):
+    path = tmp_path / "bl.txt"
+    path.write_text("!198.51.100.7  # allowlist\n203.0.113.0/24\n", encoding="utf-8")
+    entries = load_blocklist(str(path))
+    by_ip = {e.ip: e for e in entries}
+    assert by_ip["198.51.100.7"].negated is True
+    assert by_ip["198.51.100.7"].comment == "allowlist"
+    assert by_ip["203.0.113.0"].negated is False
+    # Round-trips: the "!" prefix is re-emitted.
+    text = dump_blocklist(entries)
+    assert "!198.51.100.7  # allowlist" in text
+    assert load_blocklist(str(path)) == load_blocklist(str(path))
+
+
 def test_load_remote_blocklist():
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, text="198.51.100.7\n")

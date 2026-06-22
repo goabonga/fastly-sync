@@ -385,8 +385,8 @@ def test_sync_waf_render_csv(tmp_path):
         ["sync", "waf", "--blocklist", _write_blocklist(tmp_path), "--format", "csv"],
     )
     assert result.exit_code == 0
-    assert "ip,subnet,comment" in result.output
-    assert "203.0.113.0,24," in result.output
+    assert "ip,subnet,negated,comment" in result.output
+    assert "203.0.113.0,24,false," in result.output
 
 
 # --- sync waf ----------------------------------------------------------
@@ -617,8 +617,8 @@ def test_show_waf_csv(monkeypatch):
     monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
     result = runner.invoke(cli.app, ["show", "waf", "--format", "csv", *_creds()])
     assert result.exit_code == 0
-    assert "ip,subnet,comment" in result.output
-    assert "198.51.100.7,,bad" in result.output
+    assert "ip,subnet,negated,comment" in result.output
+    assert "198.51.100.7,,false,bad" in result.output
 
 
 def test_show_all_csv(monkeypatch):
