@@ -86,7 +86,11 @@ validated with Python's `ipaddress`, so IPv4, IPv6 and subnets all work:
 203.0.113.0/24      # botnet C2
 198.51.100.7
 2001:db8::/32
+!10.0.0.0/8         # negated: an allowlist entry (do NOT match)
 ```
+
+A leading `!` marks a **negated** (allowlist) entry — it round-trips through
+`show waf --output`.
 
 The reconciliation is a diff: missing IPs are **added** and stale ones
 **removed** (`--dry-run` reports without applying). Because ACL *entries* are
@@ -148,16 +152,31 @@ A path opts into a rate limiter with the `x-fastly-ratelimit` extension:
 ```json
 {
   "paths": {
-    "/widgets": {
-      "get": {},
-      "x-fastly-ratelimit": { "name": "widgets", "limit": 100, "window": 60 }
+    "/login": {
+      "post": {},
+      "x-fastly-ratelimit": {
+        "name": "login",
+        "limit": 100,
+        "window": 60,
+        "http_methods": ["POST"],
+        "action": "response",
+        "penalty_box_duration": 1,
+        "client_key": "req.http.Fastly-Client-IP",
+        "logger_type": "",
+        "response_object_name": "",
+        "uri_dictionary_name": "",
+        "feature_revision": 1
+      }
     }
   }
 }
 ```
 
-`limit` is required (requests per `window`); `window` defaults to 60 seconds
-and `name` defaults to a slug of the path.
+`limit` is required (requests per `window`, mapped to `rps_limit` /
+`window_size`); `window` defaults to 60s and `name` to a slug of the path.
+`http_methods` defaults to the path's HTTP methods (a list or a comma string);
+the remaining fields mirror the writable Fastly rate limiter API / Terraform
+provider arguments and use sensible defaults.
 
 ### Reconciliation, pruning and confirmation
 
@@ -187,13 +206,16 @@ FILE` / `-o`):
   spec (and `--blocklist`) — **offline, no credentials, nothing applied**. Handy
   to generate IaC or a CSV from your spec in CI.
 
+Both formats carry the **full writable field set** of each Fastly resource
+(rate limiter `http_methods`/`action`/`penalty_box_duration`/`client_key`/…, ACL
+`negated`, …).
+
 `terraform` emits Fastly provider resources: a `fastly_service_vcl` with the
-`cache_setting`, `condition`, `rate_limiter` and `acl` blocks, plus a
-`fastly_service_acl_entries` resource for the WAF IPs. It is a **scaffold**, not
-a turn-key `.tf`: `fastly_service_vcl` also requires `name`, `domain` and
-`backend` (which fastly-sync does not manage), so those are `TODO` placeholders;
-the `fastly_service_acl_entries` resource is complete; serve-stale `header`
-blocks are not included.
+`cache_setting`, `condition`, `header` (serve-stale) and `rate_limiter` and `acl`
+blocks, plus a `fastly_service_acl_entries` resource for the WAF IPs. It is a
+**scaffold**, not a turn-key `.tf`: `fastly_service_vcl` also requires `name`,
+`domain` and `backend` (which fastly-sync does not manage), so those are `TODO`
+placeholders; the `fastly_service_acl_entries` resource is complete.
 
 `csv` emits one table per target (`show cdn`/`rate-limiter`/`waf`), or a generic
 `kind,name,detail` table for `all`.
