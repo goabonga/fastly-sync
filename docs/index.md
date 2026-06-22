@@ -31,7 +31,8 @@ fastly-sync sync waf --blocklist ./blocklist.txt --dry-run
 
 # Show the live config applied on Fastly, per target:
 fastly-sync show all
-fastly-sync show waf --output blocklist.txt   # export the blocklist
+fastly-sync show waf --output blocklist.txt          # export the blocklist
+fastly-sync show all --format terraform -o fastly.tf  # Fastly Terraform resources
 ```
 
 `sync` is declarative: by default it also prunes managed objects no longer in

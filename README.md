@@ -59,13 +59,15 @@ fastly-sync sync waf --blocklist https://feeds.example.com/bad-ips.txt
 fastly-sync sync waf --blocklist ./blocklist.txt --dry-run
 
 # Show the live config applied on Fastly, per target (or `all`).
-# show cdn / rate-limiter / waf accept --output FILE to write instead of printing.
+# Every show target accepts --output FILE and --format text|terraform.
 fastly-sync show all
 fastly-sync show cdn
-fastly-sync show cdn --output cdn.txt          # same text, to a file
-fastly-sync show rate-limiter
-fastly-sync show waf                           # print the blocklist
-fastly-sync show waf --output blocklist.txt    # export the blocklist (round-trips)
+fastly-sync show cdn --output cdn.txt           # same text, to a file
+fastly-sync show waf --output blocklist.txt     # export the blocklist (round-trips)
+
+# Generate Fastly Terraform resources from the live config:
+fastly-sync show all --format terraform -o fastly.tf
+fastly-sync show waf --format terraform         # fastly_service_acl_entries
 
 # Shell completion (Typer):
 fastly-sync --install-completion
@@ -172,6 +174,18 @@ Before applying, every `sync` target prints a **plan** and asks for
 confirmation. Use `--dry-run` to print the plan and stop, or `--no-confirm` to
 apply without prompting (CI). `show <target>` prints the live CDN, rate limiter
 and WAF configuration currently applied on Fastly.
+
+### Terraform export
+
+`show <target> --format terraform` renders the live managed config as Fastly
+Terraform provider resources: a `fastly_service_vcl` with the `cache_setting`,
+`condition`, `rate_limiter` and `acl` blocks, plus a `fastly_service_acl_entries`
+resource for the WAF IPs.
+
+It is a **scaffold**, not a turn-key `.tf`: `fastly_service_vcl` also requires
+`name`, `domain` and `backend` (which fastly-sync does not manage), so those are
+emitted as `TODO` placeholders. The `fastly_service_acl_entries` resource is
+complete. Serve-stale `header` blocks are not included.
 
 ## Getting started (development)
 
