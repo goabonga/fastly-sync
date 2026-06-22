@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+"""Render the live (or desired) Fastly config as CSV."""
+
+from __future__ import annotations
+
+import csv
+import io
+from collections.abc import Iterable, Sequence
+
+from .show import LiveConfig
+
+
+def _csv(header: Sequence[str], rows: Iterable[Sequence[object]]) -> str:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(header)
+    writer.writerows(rows)
+    return buffer.getvalue()
+
+
+def render_cdn(config: LiveConfig) -> str:
+    rows = [
+        [
+            setting.get("name", ""),
+            setting.get("action", ""),
+            setting.get("ttl", ""),
+            setting.get("stale_ttl", ""),
+            setting.get("cache_condition", ""),
+            setting.get("description", ""),
+        ]
+        for setting in config.cache_settings
+    ]
+    return _csv(
+        ["name", "action", "ttl", "stale_ttl", "cache_condition", "description"], rows
+    )
+
+
+def render_rate_limiters(config: LiveConfig) -> str:
+    rows = [
+        [
+            limiter.get("name", ""),
+            limiter.get("rps_limit", ""),
+            limiter.get("window_size", ""),
+        ]
+        for limiter in config.rate_limiters
+    ]
+    return _csv(["name", "rps_limit", "window_size"], rows)
+
+
+def render_waf(config: LiveConfig) -> str:
+    rows = [
+        [entry.ip, "" if entry.subnet is None else entry.subnet, entry.comment]
+        for entry in config.blocklist
+    ]
+    return _csv(["ip", "subnet", "comment"], rows)
+
+
+def render_all(config: LiveConfig) -> str:
+    rows: list[Sequence[object]] = []
+    for setting in config.cache_settings:
+        rows.append(
+            [
+                "cdn",
+                setting.get("name", ""),
+                f"action={setting.get('action')};ttl={setting.get('ttl')}",
+            ]
+        )
+    for limiter in config.rate_limiters:
+        rows.append(
+            [
+                "ratelimiter",
+                limiter.get("name", ""),
+                f"{limiter.get('rps_limit')} req/{limiter.get('window_size')}s",
+            ]
+        )
+    for entry in config.blocklist:
+        cidr = entry.ip if entry.subnet is None else f"{entry.ip}/{entry.subnet}"
+        rows.append(["waf", cidr, entry.comment])
+    return _csv(["kind", "name", "detail"], rows)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import typer
 
-from . import __version__, terraform
+from . import __version__, csvout, terraform
 from .blocklist import dump_blocklist, load_blocklist
 from .config import load_settings
 from .errors import FastlySyncError
@@ -24,10 +24,11 @@ from .waf import DEFAULT_ACL_NAME, bootstrap_acl, synchronize_blocklist
 
 
 class OutputFormat(StrEnum):
-    """Output format for the show commands."""
+    """Output format for the show / sync commands."""
 
     TEXT = "text"
     TERRAFORM = "terraform"
+    CSV = "csv"
 
 
 app = typer.Typer(
@@ -75,7 +76,7 @@ _OUTPUT_OPTION = typer.Option(
     None, "--output", "-o", help="write the output to this file instead of stdout"
 )
 _FORMAT_OPTION = typer.Option(
-    OutputFormat.TEXT, "--format", help="output format (text or terraform)"
+    OutputFormat.TEXT, "--format", help="output format (text, terraform or csv)"
 )
 
 
@@ -399,11 +400,13 @@ def show_cdn(
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live CDN cache settings (text or terraform)."""
+    """Show the live CDN cache settings (text, terraform or csv)."""
 
     def render(config: LiveConfig) -> str:
         if fmt is OutputFormat.TERRAFORM:
             return terraform.render(config, DEFAULT_ACL_NAME, cdn=True)
+        if fmt is OutputFormat.CSV:
+            return csvout.render_cdn(config)
         return _render_version(config) + _render_cdn(config)
 
     _show(token, service_id, render, output)
@@ -416,11 +419,13 @@ def show_rate_limiter(
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live rate limiters (text or terraform)."""
+    """Show the live rate limiters (text, terraform or csv)."""
 
     def render(config: LiveConfig) -> str:
         if fmt is OutputFormat.TERRAFORM:
             return terraform.render(config, DEFAULT_ACL_NAME, ratelimit=True)
+        if fmt is OutputFormat.CSV:
+            return csvout.render_rate_limiters(config)
         return _render_version(config) + _render_rate_limiters(config)
 
     _show(token, service_id, render, output)
@@ -434,13 +439,15 @@ def show_all(
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
 ) -> None:
-    """Show the live CDN, rate limiter and WAF config (text or terraform)."""
+    """Show the live CDN, rate limiter and WAF config (text, terraform or csv)."""
 
     def render(config: LiveConfig) -> str:
         if fmt is OutputFormat.TERRAFORM:
             return terraform.render(
                 config, acl_name, cdn=True, ratelimit=True, waf=True
             )
+        if fmt is OutputFormat.CSV:
+            return csvout.render_all(config)
         return (
             _render_version(config)
             + _render_cdn(config)
@@ -467,6 +474,8 @@ def show_waf(
             config = gather(client, acl_name)
         if fmt is OutputFormat.TERRAFORM:
             _emit(terraform.render(config, acl_name, waf=True), output)
+        elif fmt is OutputFormat.CSV:
+            _emit(csvout.render_waf(config), output)
         elif output is None:
             typer.echo(
                 _render_version(config) + _render_waf(config, acl_name), nl=False

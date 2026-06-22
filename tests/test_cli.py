@@ -500,3 +500,38 @@ def test_show_all_terraform_output_file(tmp_path, monkeypatch):
     assert 'resource "fastly_service_vcl"' in written
     assert "fastly_service_acl_entries" in written
     assert f"wrote to {out}" in result.output
+
+
+def test_show_cdn_csv(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(cli.app, ["show", "cdn", "--format", "csv", *_creds()])
+    assert result.exit_code == 0
+    assert "name,action,ttl,stale_ttl,cache_condition,description" in result.output
+    assert "/widgets,cache,60" in result.output
+
+
+def test_show_rate_limiter_csv(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(
+        cli.app, ["show", "rate-limiter", "--format", "csv", *_creds()]
+    )
+    assert result.exit_code == 0
+    assert "name,rps_limit,window_size" in result.output
+    assert "fsync-widgets,100,60" in result.output
+
+
+def test_show_waf_csv(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(cli.app, ["show", "waf", "--format", "csv", *_creds()])
+    assert result.exit_code == 0
+    assert "ip,subnet,comment" in result.output
+    assert "198.51.100.7,,bad" in result.output
+
+
+def test_show_all_csv(monkeypatch):
+    monkeypatch.setattr(cli, "FastlyClient", _factory(_show_handler))
+    result = runner.invoke(cli.app, ["show", "all", "--format", "csv", *_creds()])
+    assert result.exit_code == 0
+    assert "kind,name,detail" in result.output
+    assert "cdn,/widgets," in result.output
+    assert "waf,198.51.100.7,bad" in result.output
