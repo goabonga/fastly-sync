@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Versions and entries are computed from [Conventional Commits](https://www.conventionalcommits.org/)
 by [multicz](https://github.com/goabonga/multicz).
 
+## [0.2.0] - 2026-06-27
+
+### Added
+
+- render the live config as Fastly Terraform resources (show --format terraform) (`f50fd27`)
+- add csv output format to the show commands (`996fe82`)
+- render desired config as terraform/csv from sync (offline, --format) (`b699978`)
+- carry the full Fastly rate limiter field set (http_methods, action, ...) (`cd3fe69`)
+- support negated (allowlist) ACL entries across model, api and outputs (`3c46452`)
+- emit CDN methods (csv) and serve-stale header blocks (terraform) (`9f253de`)
+
 ## [0.1.0] - 2026-06-21
 
 ### Added

@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "git_head": "afb82b697a77cecfce51e8fd20f6291d835ae9e5",
-  "git_head_short": "afb82b6",
-  "timestamp": "2026-06-21T18:23:20Z",
+  "git_head": "a349e5c8e46931a5c7404e4399220352d2b4e183",
+  "git_head_short": "a349e5c",
+  "timestamp": "2026-06-27T20:24:41Z",
   "components": {
     "fastly-sync": {
-      "version": "0.1.0",
-      "tag": "v0.1.0",
+      "version": "0.2.0",
+      "tag": "v0.2.0",
       "tag_sha": null
     }
   }
