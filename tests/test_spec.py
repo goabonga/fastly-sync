@@ -178,6 +178,32 @@ def test_non_dict_cache_extension_raises():
         build_desired_state({"paths": {"/w": {"get": {}, "x-fastly-cache": 5}}})
 
 
+def test_custom_extension_keys():
+    spec = {
+        "paths": {
+            "/w": {
+                "get": {},
+                "x-cdn": {"ttl": 99, "description": "custom"},
+                "x-rl": {"name": "w", "limit": 7},
+                "x-fastly-cache": {"ttl": 1},  # ignored: not the configured key
+            }
+        }
+    }
+    state = build_desired_state(spec, cache_key="x-cdn", ratelimit_key="x-rl")
+    assert state.endpoints[0].ttl == 99
+    assert state.endpoints[0].description == "custom"
+    assert state.rate_limiters[0].limit == 7
+    # The default keys are not read when custom ones are configured.
+    assert state.rate_limiters[0].name == "w"
+
+
+def test_custom_cache_key_in_error_message():
+    with pytest.raises(SpecError, match="invalid x-cdn for"):
+        build_desired_state(
+            {"paths": {"/w": {"get": {}, "x-cdn": 5}}}, cache_key="x-cdn"
+        )
+
+
 def test_build_desired_state_requires_paths():
     with pytest.raises(SpecError, match="no 'paths'"):
         build_desired_state({"openapi": "3.0.0"})

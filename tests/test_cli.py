@@ -338,6 +338,27 @@ def test_sync_rate_limiter_render_csv(tmp_path):
     assert "fsync-widgets,GET,100,60,1,response" in result.output
 
 
+def test_sync_cdn_custom_cache_key(tmp_path):
+    spec = {"paths": {"/w": {"get": {}, "x-cdn": {"ttl": 99, "description": "custom"}}}}
+    path = tmp_path / "openapi.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    result = runner.invoke(
+        cli.app,
+        [
+            "sync",
+            "cdn",
+            "--openapi",
+            str(path),
+            "--cache-key",
+            "x-cdn",
+            "--format",
+            "csv",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "/w,GET,cache,99,0,cache-w,custom" in result.output
+
+
 def test_sync_all_render_csv(tmp_path):
     result = runner.invoke(
         cli.app,

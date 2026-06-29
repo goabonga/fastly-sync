@@ -25,9 +25,9 @@ _HTTP_METHODS = {
     "patch",
     "trace",
 }
-_RATELIMIT_KEY = "x-fastly-ratelimit"
+DEFAULT_RATELIMIT_KEY = "x-fastly-ratelimit"
+DEFAULT_CACHE_KEY = "x-fastly-cache"
 _DEFAULT_WINDOW = 60
-_CACHE_KEY = "x-fastly-cache"
 _CACHE_ACTIONS = {"cache", "pass"}
 _CACHEABLE_METHODS = {"GET", "HEAD"}
 _DEFAULT_TTL = 3600
@@ -56,8 +56,18 @@ def load_spec(source: str, *, client: httpx.Client | None = None) -> dict[str, A
     return data
 
 
-def build_desired_state(spec: dict[str, Any]) -> DesiredState:
-    """Derive CDN endpoints and rate limiter rules from an OpenAPI spec."""
+def build_desired_state(
+    spec: dict[str, Any],
+    *,
+    cache_key: str = DEFAULT_CACHE_KEY,
+    ratelimit_key: str = DEFAULT_RATELIMIT_KEY,
+) -> DesiredState:
+    """Derive CDN endpoints and rate limiter rules from an OpenAPI spec.
+
+    ``cache_key`` / ``ratelimit_key`` select the OpenAPI extension keys to read
+    (defaults: ``x-fastly-cache`` / ``x-fastly-ratelimit``), so custom keys can
+    be used in the document.
+    """
     paths = spec.get("paths")
     if not isinstance(paths, dict):
         raise SpecError("OpenAPI spec has no 'paths' object")
@@ -71,8 +81,8 @@ def build_desired_state(spec: dict[str, Any]) -> DesiredState:
             method.upper() for method in item if method.lower() in _HTTP_METHODS
         )
         if methods:
-            endpoints.append(_cache_for(path, item, methods))
-        rule = _rate_limit_for(path, item, methods)
+            endpoints.append(_cache_for(path, item, methods, cache_key))
+        rule = _rate_limit_for(path, item, methods, ratelimit_key)
         if rule is not None:
             rate_limiters.append(rule)
 
@@ -83,16 +93,16 @@ def build_desired_state(spec: dict[str, Any]) -> DesiredState:
 
 
 def _cache_for(
-    path: str, item: dict[str, Any], methods: tuple[str, ...]
+    path: str, item: dict[str, Any], methods: tuple[str, ...], cache_key: str
 ) -> CdnEndpoint:
     # Idempotent read-only endpoints are cacheable by default; any mutating
-    # method forces a pass. An explicit x-fastly-cache extension overrides.
+    # method forces a pass. An explicit cache extension overrides.
     cacheable = all(method in _CACHEABLE_METHODS for method in methods)
     default_action = "cache" if cacheable else "pass"
     condition_name = f"cache-{_slug(path)}"
     match_statement = _match_statement(path)
 
-    extension = item.get(_CACHE_KEY)
+    extension = item.get(cache_key)
     if extension is None:
         return CdnEndpoint(
             path=path,
@@ -103,12 +113,12 @@ def _cache_for(
             match_statement=match_statement,
         )
     if not isinstance(extension, dict):
-        raise SpecError(f"invalid {_CACHE_KEY} for '{path}': expected an object")
+        raise SpecError(f"invalid {cache_key} for '{path}': expected an object")
 
     action = str(extension.get("action", default_action))
     if action not in _CACHE_ACTIONS:
         raise SpecError(
-            f"invalid {_CACHE_KEY} action '{action}' for '{path}': "
+            f"invalid {cache_key} action '{action}' for '{path}': "
             f"expected one of {sorted(_CACHE_ACTIONS)}"
         )
     try:
@@ -116,7 +126,7 @@ def _cache_for(
         stale_while_revalidate = int(extension.get("stale_while_revalidate", 0))
         stale_if_error = int(extension.get("stale_if_error", 0))
     except (TypeError, ValueError) as exc:
-        raise SpecError(f"invalid {_CACHE_KEY} for '{path}': {exc}") from exc
+        raise SpecError(f"invalid {cache_key} for '{path}': {exc}") from exc
 
     return CdnEndpoint(
         path=path,
@@ -132,9 +142,9 @@ def _cache_for(
 
 
 def _rate_limit_for(
-    path: str, item: dict[str, Any], methods: tuple[str, ...]
+    path: str, item: dict[str, Any], methods: tuple[str, ...], ratelimit_key: str
 ) -> RateLimiterRule | None:
-    extension = item.get(_RATELIMIT_KEY)
+    extension = item.get(ratelimit_key)
     if not isinstance(extension, dict):
         return None
     try:
@@ -143,7 +153,7 @@ def _rate_limit_for(
         penalty_box_duration = int(extension.get("penalty_box_duration", 1))
         feature_revision = int(extension.get("feature_revision", 1))
     except (KeyError, TypeError, ValueError) as exc:
-        raise SpecError(f"invalid {_RATELIMIT_KEY} for '{path}': {exc}") from exc
+        raise SpecError(f"invalid {ratelimit_key} for '{path}': {exc}") from exc
     return RateLimiterRule(
         name=str(extension.get("name") or _slug(path)),
         path=path,

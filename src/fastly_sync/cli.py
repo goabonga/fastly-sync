@@ -18,7 +18,12 @@ from .errors import FastlySyncError
 from .fastly import FastlyClient
 from .models import DesiredState, SyncResult
 from .show import LiveConfig, from_desired_state, gather
-from .spec import build_desired_state, load_spec
+from .spec import (
+    DEFAULT_CACHE_KEY,
+    DEFAULT_RATELIMIT_KEY,
+    build_desired_state,
+    load_spec,
+)
 from .sync import ALL_COMPONENTS, Component, select_state, synchronize
 from .waf import DEFAULT_ACL_NAME, bootstrap_acl, synchronize_blocklist
 
@@ -77,6 +82,14 @@ _OUTPUT_OPTION = typer.Option(
 )
 _FORMAT_OPTION = typer.Option(
     OutputFormat.TEXT, "--format", help="output format (text, terraform or csv)"
+)
+_CACHE_KEY_OPTION = typer.Option(
+    DEFAULT_CACHE_KEY, "--cache-key", help="OpenAPI extension key for cache policy"
+)
+_RATELIMIT_KEY_OPTION = typer.Option(
+    DEFAULT_RATELIMIT_KEY,
+    "--ratelimit-key",
+    help="OpenAPI extension key for rate limiters",
 )
 
 
@@ -158,6 +171,8 @@ def _run_openapi_sync(
     dry_run: bool,
     fmt: OutputFormat,
     output: Path | None,
+    cache_key: str,
+    ratelimit_key: str,
     token: str | None,
     service_id: str | None,
 ) -> None:
@@ -165,7 +180,10 @@ def _run_openapi_sync(
     ratelimit = Component.RATELIMIT in components
 
     def run() -> None:
-        state = select_state(build_desired_state(load_spec(openapi)), components)
+        desired = build_desired_state(
+            load_spec(openapi), cache_key=cache_key, ratelimit_key=ratelimit_key
+        )
+        state = select_state(desired, components)
         if fmt is not OutputFormat.TEXT:
             config = from_desired_state(state, ())
             _emit(
@@ -209,6 +227,7 @@ def sync_cdn(
     no_confirm: bool = _NO_CONFIRM_OPTION,
     fmt: OutputFormat = _FORMAT_OPTION,
     output: Path | None = _OUTPUT_OPTION,
+    cache_key: str = _CACHE_KEY_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
@@ -222,6 +241,8 @@ def sync_cdn(
         dry_run=dry_run,
         fmt=fmt,
         output=output,
+        cache_key=cache_key,
+        ratelimit_key=DEFAULT_RATELIMIT_KEY,
         token=token,
         service_id=service_id,
     )
@@ -234,6 +255,7 @@ def sync_rate_limiter(
     no_confirm: bool = _NO_CONFIRM_OPTION,
     fmt: OutputFormat = _FORMAT_OPTION,
     output: Path | None = _OUTPUT_OPTION,
+    ratelimit_key: str = _RATELIMIT_KEY_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
@@ -247,6 +269,8 @@ def sync_rate_limiter(
         dry_run=dry_run,
         fmt=fmt,
         output=output,
+        cache_key=DEFAULT_CACHE_KEY,
+        ratelimit_key=ratelimit_key,
         token=token,
         service_id=service_id,
     )
@@ -269,6 +293,8 @@ def sync_all(
     no_confirm: bool = _NO_CONFIRM_OPTION,
     fmt: OutputFormat = _FORMAT_OPTION,
     output: Path | None = _OUTPUT_OPTION,
+    cache_key: str = _CACHE_KEY_OPTION,
+    ratelimit_key: str = _RATELIMIT_KEY_OPTION,
     token: str | None = _TOKEN_OPTION,
     service_id: str | None = _SERVICE_OPTION,
     dry_run: bool = _DRY_RUN_OPTION,
@@ -276,7 +302,10 @@ def sync_all(
     """Synchronise CDN, rate limiters and the WAF blocklist (or render them)."""
 
     def run() -> None:
-        state = select_state(build_desired_state(load_spec(openapi)), ALL_COMPONENTS)
+        desired = build_desired_state(
+            load_spec(openapi), cache_key=cache_key, ratelimit_key=ratelimit_key
+        )
+        state = select_state(desired, ALL_COMPONENTS)
         entries = load_blocklist(blocklist)
         if fmt is not OutputFormat.TEXT:
             config = from_desired_state(state, entries)
