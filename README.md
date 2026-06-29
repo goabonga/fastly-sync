@@ -106,11 +106,19 @@ activated version; subsequent runs only touch the ACL entries. Use
 writes them in the blocklist text format, so you can snapshot, diff or version
 the current blocklist. The output round-trips back through `sync waf`.
 
+### OpenAPI extensions (and custom keys)
+
+CDN and rate limiter behaviour is read from per-path OpenAPI extensions:
+`x-fastly-cache` and `x-fastly-ratelimit` by default. Use **custom keys** in
+your document by passing `--cache-key` / `--ratelimit-key` to the `sync`
+commands, e.g. `sync cdn --openapi spec.json --cache-key x-cdn`.
+
 ### OpenAPI CDN cache extension
 
 By default the cache policy is derived from a path's methods: a GET/HEAD-only
 path is **cached** (TTL 3600s), any path exposing a mutating method (POST, PUT,
-…) is set to **pass**. Override per path with the `x-fastly-cache` extension:
+…) is set to **pass**. Override per path with the `x-fastly-cache` extension
+(or your `--cache-key`):
 
 ```json
 {
