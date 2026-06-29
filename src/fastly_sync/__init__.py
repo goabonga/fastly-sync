@@ -3,4 +3,4 @@
 
 """Synchronise Fastly CDN, rate limiter and WAF IP blocklist configuration."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

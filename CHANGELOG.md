@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Versions and entries are computed from [Conventional Commits](https://www.conventionalcommits.org/)
 by [multicz](https://github.com/goabonga/multicz).
 
+## [0.3.0] - 2026-06-29
+
+### Added
+
+- configurable OpenAPI extension keys via --cache-key / --ratelimit-key (`faec10a`)
+
 ## [0.2.0] - 2026-06-27
 
 ### Added
